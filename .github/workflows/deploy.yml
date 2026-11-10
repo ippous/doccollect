@@ -30,9 +30,15 @@ jobs:
     outputs:
       env: ${{ steps.pick.outputs.env }}
       version: ${{ steps.pick.outputs.version }}
+      enabled: ${{ steps.pick.outputs.enabled }}
     steps:
       - id: pick
+        env:
+          HAS_VPS: ${{ secrets.VPS_HOST != '' && secrets.VPS_SSH_KEY != '' }}
         run: |
+          # Tant que les secrets du VPS ne sont pas configurés, le déploiement est ignoré (pas d'échec).
+          echo "enabled=$HAS_VPS" >> "$GITHUB_OUTPUT"
+          [ "$HAS_VPS" = "true" ] || echo "::notice::Secrets VPS_HOST / VPS_SSH_KEY absents : déploiement ignoré (voir docs/dev/deployment.md)."
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then ENV="${{ inputs.environment }}";
           elif [ "${{ github.event_name }}" = "release" ]; then ENV=prod;
           elif [ "${{ github.ref_name }}" = "main" ]; then ENV=test;
@@ -43,6 +49,8 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   test:
+    needs: target
+    if: needs.target.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +61,7 @@ jobs:
 
   image:
     needs: [target, test]
+    if: needs.target.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +84,7 @@ jobs:
 
   deploy:
     needs: [target, image]
+    if: needs.target.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     environment:
       name: ${{ needs.target.outputs.env }}
