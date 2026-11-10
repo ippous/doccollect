@@ -1,0 +1,135 @@
+@inject ApiClient Api
+
+@* Liste et édition de modèles. Admin = modèles publics ; demandeur = ses modèles privés (+ lecture du catalogue public). *@
+
+<div class="page-head">
+    <div>
+        <h1>@(AdminMode ? "Modèles publics" : "Modèles")</h1>
+        <p class="muted small">@(AdminMode
+            ? "Catalogue proposé à tous les demandeurs."
+            : "Vos listes de pièces réutilisables. Les modèles du catalogue peuvent être copiés puis adaptés.")</p>
+    </div>
+    @if (_editing is null)
+    {
+        <button class="btn primary" @onclick="New">Nouveau modèle</button>
+    }
+</div>
+<ErrorAlert Message="@_error" />
+
+@if (_editing is not null)
+{
+    <form class="card" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+        <label>Nom</label>
+        <input type="text" @bind="_editing.Name" required />
+        <label>Description <span class="hint">(facultatif)</span></label>
+        <input type="text" @bind="_editing.Description" />
+        <label>Transmission par défaut</label>
+        <select @bind="_editing.Mode">
+            <option value="@DeliveryMode.AllAtOnce">@DeliveryMode.AllAtOnce.Label()</option>
+            <option value="@DeliveryMode.Incremental">@DeliveryMode.Incremental.Label()</option>
+        </select>
+        <h2>Pièces attendues</h2>
+        <ItemsEditor Items="_editing.Items" />
+        <div class="row" style="margin-top:16px">
+            <button class="btn primary" disabled="@_busy">Enregistrer</button>
+            <button type="button" class="btn ghost" @onclick="() => _editing = null">Annuler</button>
+        </div>
+    </form>
+}
+else if (_templates is null)
+{
+    <p>Chargement…</p>
+}
+else
+{
+    <div class="list">
+        @foreach (var t in _templates)
+        {
+            var own = AdminMode || t.Visibility == TemplateVisibility.Private;
+            <div class="card tight">
+                <div class="row between">
+                    <h3>@t.Name</h3>
+                    <span class="badge @(t.Visibility == TemplateVisibility.Public ? "info" : "")">@(t.Visibility == TemplateVisibility.Public ? "Catalogue" : "Privé")</span>
+                </div>
+                @if (!string.IsNullOrEmpty(t.Description)) { <p class="small muted">@t.Description</p> }
+                <p class="small">@t.Items.Count pièce(s) · @t.DefaultDeliveryMode.Label()</p>
+                <div class="row">
+                    @if (own)
+                    {
+                        <button class="btn small" @onclick="() => Edit(t)">Modifier</button>
+                        <button class="btn small danger" @onclick="() => DeleteAsync(t)">Supprimer</button>
+                    }
+                    else
+                    {
+                        <button class="btn small" @onclick="() => CopyAsync(t)">Copier pour l'adapter</button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public bool AdminMode { get; set; }
+    private string BaseUrl => AdminMode ? "api/admin/templates" : "api/requester/templates";
+
+    private List<TemplateDto>? _templates;
+    private Editing? _editing;
+    private string? _error;
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try { _templates = await Api.GetAsync<List<TemplateDto>>(BaseUrl); }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private void New() => _editing = new Editing { Items = [new()] };
+
+    private void Edit(TemplateDto t) => _editing = new Editing
+    {
+        Id = t.Id, Name = t.Name, Description = t.Description, Mode = t.DefaultDeliveryMode,
+        Items = t.Items.Select(ItemsEditor.EditableItem.From).ToList()
+    };
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var req = new SaveTemplateRequest(_editing!.Name, _editing.Description,
+                AdminMode ? TemplateVisibility.Public : TemplateVisibility.Private, _editing.Mode,
+                _editing.Items.Select((x, i) => x.ToDto(i)).ToList());
+            if (_editing.Id is { } id) await Api.PutAsync<TemplateDto>($"{BaseUrl}/{id}", req);
+            else await Api.PostAsync<TemplateDto>(BaseUrl, req);
+            _editing = null;
+            await LoadAsync();
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task CopyAsync(TemplateDto t)
+    {
+        try { var copy = await Api.PostAsync<TemplateDto>($"{BaseUrl}/{t.Id}/copy"); await LoadAsync(); Edit(copy); }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task DeleteAsync(TemplateDto t)
+    {
+        try { await Api.DeleteAsync($"{BaseUrl}/{t.Id}"); await LoadAsync(); }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private sealed class Editing
+    {
+        public Guid? Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? Description { get; set; }
+        public DeliveryMode Mode { get; set; } = DeliveryMode.AllAtOnce;
+        public List<ItemsEditor.EditableItem> Items { get; set; } = [];
+    }
+}

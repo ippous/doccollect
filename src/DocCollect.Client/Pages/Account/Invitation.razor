@@ -1,0 +1,79 @@
+@page "/invitation/{Token}"
+@attribute [AllowAnonymous]
+@inject IHttpClientFactory Http
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<PageTitle>Créer mon accès — DocCollect</PageTitle>
+
+<div class="content narrow" style="padding:0">
+    <div class="card">
+        @if (_info is null && _error is null)
+        {
+            <p>Chargement…</p>
+        }
+        else if (_info is null || !_info.Usable)
+        {
+            <h1>Invitation non valable</h1>
+            <p class="muted">@(_error ?? "Ce lien a expiré ou a déjà été utilisé. Si vous avez déjà créé votre accès, connectez-vous.")</p>
+            <a class="btn primary" href="login">Se connecter</a>
+        }
+        else
+        {
+            <h1>Créer mon accès</h1>
+            @if (!string.IsNullOrEmpty(_info.TenantName))
+            {
+                <p><b>@_info.TenantName</b> vous invite sur DocCollect.</p>
+            }
+            <form @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+                <label>Adresse e-mail</label>
+                <input type="email" value="@_info.Email" disabled />
+                <label for="name">Votre nom <span class="hint">(facultatif)</span></label>
+                <input id="name" type="text" autocomplete="name" @bind="_name" />
+                <label for="pwd">Choisissez un mot de passe <span class="hint">(10 caractères minimum, avec majuscule, minuscule et chiffre)</span></label>
+                <input id="pwd" type="password" autocomplete="new-password" @bind="_password" required minlength="10" />
+                <label for="pwd2">Confirmez le mot de passe</label>
+                <input id="pwd2" type="password" autocomplete="new-password" @bind="_confirm" required />
+                <ErrorAlert Message="@_submitError" />
+                <button class="btn primary block" style="margin-top:12px" disabled="@_busy">Créer mon accès</button>
+            </form>
+            <p class="small muted" style="margin-top:12px">Étape suivante : activer la double authentification, puis déposer vos documents.</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Token { get; set; } = "";
+    private InvitationInfo? _info;
+    private string? _error, _submitError, _name;
+    private string _password = "", _confirm = "";
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _info = await Http.CreateClient("anonymous").GetFromJsonAsync<InvitationInfo>($"api/auth/invitations/{Uri.EscapeDataString(Token)}"); }
+        catch (HttpRequestException) { _error = "Invitation introuvable."; }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _submitError = null;
+        if (_password != _confirm) { _submitError = "Les deux mots de passe ne correspondent pas."; return; }
+        _busy = true;
+        try
+        {
+            using var resp = await Http.CreateClient("anonymous").PostAsJsonAsync("api/auth/invitations/accept",
+                new AcceptInvitationRequest(Token, _password, _name));
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadFromJsonAsync<ApiError>();
+                _submitError = err?.Message ?? "Création impossible.";
+                return;
+            }
+            var tokens = await resp.Content.ReadFromJsonAsync<LoginResponse>();
+            await Auth.SignedInAsync(tokens!);
+            Nav.NavigateTo("account/2fa?returnUrl=%2F");
+        }
+        finally { _busy = false; }
+    }
+}

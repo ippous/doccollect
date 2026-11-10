@@ -1,0 +1,71 @@
+@inherits LayoutComponentBase
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject IHttpClientFactory Http
+
+<div class="shell">
+    <header class="topbar">
+        <a class="logo" href=""><img src="icon.svg" alt="" /> DocCollect</a>
+        @if (!string.IsNullOrEmpty(_env))
+        {
+            <span class="env">@_env</span>
+        }
+        <span class="spacer"></span>
+        <AuthorizeView>
+            <Authorized>
+                <a class="small" href="account" title="Mon compte">@context.User.Identity?.Name</a>
+                <button class="btn small ghost" style="color:inherit" @onclick="LogoutAsync">Déconnexion</button>
+            </Authorized>
+        </AuthorizeView>
+    </header>
+
+    <AuthorizeView Roles="@Roles.Admin">
+        <nav class="nav" aria-label="Administration">
+            <NavLink href="admin" Match="NavLinkMatch.All">Demandeurs</NavLink>
+            <NavLink href="admin/storage">Stockages</NavLink>
+            <NavLink href="admin/templates">Modèles publics</NavLink>
+            <NavLink href="admin/users">Utilisateurs</NavLink>
+            <NavLink href="admin/ai">IA et facturation</NavLink>
+        </nav>
+    </AuthorizeView>
+    <AuthorizeView Roles="@Roles.Requester">
+        <nav class="nav" aria-label="Espace demandeur">
+            <NavLink href="requester" Match="NavLinkMatch.All">Dossiers</NavLink>
+            <NavLink href="requester/dossiers/new">Nouvelle demande</NavLink>
+            <NavLink href="requester/templates">Modèles</NavLink>
+            <NavLink href="requester/settings">Paramètres</NavLink>
+            <NavLink href="requester/team">Équipe</NavLink>
+        </nav>
+    </AuthorizeView>
+    <AuthorizeView Roles="@Roles.Provider">
+        <nav class="nav" aria-label="Mes demandes">
+            <NavLink href="provider" Match="NavLinkMatch.Prefix">Documents demandés</NavLink>
+        </nav>
+    </AuthorizeView>
+
+    <main class="content">
+        @Body
+    </main>
+</div>
+
+@code {
+    private string? _env;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var cfg = await Http.CreateClient("anonymous").GetFromJsonAsync<ConfigDto>("api/config");
+            _env = cfg?.Environment;
+        }
+        catch { /* sans gravité */ }
+    }
+
+    private async Task LogoutAsync()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("login");
+    }
+
+    private sealed record ConfigDto(string? Environment);
+}

@@ -1,0 +1,80 @@
+@page "/requester/team"
+@attribute [Authorize(Roles = Roles.Requester)]
+@inject ApiClient Api
+
+<PageTitle>Équipe — DocCollect</PageTitle>
+
+<h1>Équipe</h1>
+<ErrorAlert Message="@_error" />
+<ErrorAlert Kind="ok" Message="@_info" />
+
+<div class="card">
+    <div class="table-wrap">
+        <table class="table">
+            <thead><tr><th>Utilisateur</th><th>2FA</th></tr></thead>
+            <tbody>
+                @foreach (var u in _users)
+                {
+                    <tr><td>@u.Email @if (u.DisplayName is not null) { <span class="muted">(@u.DisplayName)</span> }</td>
+                        <td>@(u.TwoFactorEnabled ? "activée" : "en attente")</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<form class="card" @onsubmit="InviteAsync" @onsubmit:preventDefault>
+    <h2 style="margin-top:0">Inviter un collègue</h2>
+    <label>E-mail</label>
+    <input type="email" @bind="_email" required />
+    <button class="btn primary" style="margin-top:12px" disabled="@_busy">Envoyer l'invitation</button>
+</form>
+
+<h2>Consommation IA</h2>
+@if (_usage.Count == 0)
+{
+    <p class="small muted">Aucune vérification IA cette année.</p>
+}
+else
+{
+    <div class="card table-wrap">
+        <table class="table">
+            <thead><tr><th>Mois</th><th>Documents vérifiés</th><th>Jetons (entrée / sortie)</th></tr></thead>
+            <tbody>
+                @foreach (var u in _usage) { <tr><td>@u.Month/@u.Year</td><td>@u.Calls</td><td>@u.InputTokens.ToString("N0") / @u.OutputTokens.ToString("N0")</td></tr> }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<UserDto> _users = [];
+    private List<AiUsageDto> _usage = [];
+    private string _email = "";
+    private string? _error, _info;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _users = await Api.GetAsync<List<UserDto>>("api/requester/users");
+            _usage = await Api.GetAsync<List<AiUsageDto>>("api/requester/ai-usage");
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task InviteAsync()
+    {
+        _busy = true;
+        _error = _info = null;
+        try
+        {
+            await Api.PostAsync("api/requester/users/invite", new InviteUserRequest(_email, Roles.Requester, null));
+            _info = $"Invitation envoyée à {_email}.";
+            _email = "";
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,80 @@
+@* Édition d'une liste de pièces attendues (modèles et pièces supplémentaires d'un dossier). *@
+
+@for (var i = 0; i < Items.Count; i++)
+{
+    var index = i;
+    var item = Items[index];
+    <div class="card tight">
+        <div class="row between">
+            <b>Pièce @(index + 1)</b>
+            <div class="row">
+                <button type="button" class="btn small ghost" title="Monter" disabled="@(index == 0)" @onclick="() => Move(index, -1)">↑</button>
+                <button type="button" class="btn small ghost" title="Descendre" disabled="@(index == Items.Count - 1)" @onclick="() => Move(index, 1)">↓</button>
+                <button type="button" class="btn small danger" @onclick="() => Items.RemoveAt(index)">Supprimer</button>
+            </div>
+        </div>
+        <label>Libellé</label>
+        <input type="text" @bind="item.Label" required placeholder="ex. Pièce d'identité" />
+        <label>Précisions pour le fournisseur <span class="hint">(facultatif)</span></label>
+        <input type="text" @bind="item.Description" placeholder="ex. recto et verso, en cours de validité" />
+        <div class="grid-2">
+            <div>
+                <label>Formats acceptés <span class="hint">(aucun coché = tous)</span></label>
+                @foreach (var (value, label) in Ui.CommonTypes)
+                {
+                    <label class="check"><input type="checkbox" checked="@item.Types.Contains(value)" @onchange="e => Toggle(item, value, (bool)e.Value!)" /> @label</label>
+                }
+            </div>
+            <div>
+                <label class="check"><input type="checkbox" @bind="item.Required" /> Obligatoire</label>
+                <div class="row">
+                    <div style="flex:1"><label>Taille max (Mo)</label><input type="number" min="1" max="100" @bind="item.MaxSizeMb" /></div>
+                    <div style="flex:1"><label>Nb fichiers max</label><input type="number" min="1" max="50" @bind="item.MaxFiles" /></div>
+                </div>
+            </div>
+        </div>
+        <label>Type de document attendu, pour la vérification IA <span class="hint">(facultatif — ex. « avis d'imposition sur le revenu »)</span></label>
+        <input type="text" @bind="item.ExpectedType" />
+    </div>
+}
+<button type="button" class="btn" @onclick="Add">+ Ajouter une pièce</button>
+
+@code {
+    [Parameter, EditorRequired] public List<EditableItem> Items { get; set; } = [];
+
+    private void Add() => Items.Add(new EditableItem());
+
+    private void Move(int index, int delta)
+    {
+        var item = Items[index];
+        Items.RemoveAt(index);
+        Items.Insert(index + delta, item);
+    }
+
+    private static void Toggle(EditableItem item, string value, bool on)
+    {
+        if (on && !item.Types.Contains(value)) item.Types.Add(value);
+        if (!on) item.Types.Remove(value);
+    }
+
+    /// <summary>Pièce modifiable (les DTO sont des records immuables).</summary>
+    public sealed class EditableItem
+    {
+        public Guid? Id { get; set; }
+        public string Label { get; set; } = "";
+        public string? Description { get; set; }
+        public bool Required { get; set; } = true;
+        public List<string> Types { get; set; } = ["application/pdf", "image/*"];
+        public int MaxSizeMb { get; set; } = 20;
+        public int MaxFiles { get; set; } = 1;
+        public string? ExpectedType { get; set; }
+
+        public static EditableItem From(TemplateItemDto d) => new()
+        {
+            Id = d.Id, Label = d.Label, Description = d.Description, Required = d.Required, Types = [.. d.AcceptedContentTypes],
+            MaxSizeMb = d.MaxSizeMb, MaxFiles = d.MaxFiles, ExpectedType = d.ExpectedDocumentType
+        };
+
+        public TemplateItemDto ToDto(int order) => new(Id, Label, Description, Required, Types, MaxSizeMb, MaxFiles, ExpectedType, order);
+    }
+}

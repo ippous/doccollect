@@ -1,0 +1,162 @@
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+@* Checklist du fournisseur : ce qui est attendu, ce qui manque, dépôt (fichier ou photo), retrait avant transmission. *@
+
+@if (Dossier is null)
+{
+    <p>Chargement…</p>
+    return;
+}
+
+<div class="card">
+    <p class="small muted">Demande de <b>@Dossier.TenantName</b>@(Dossier.DueDate is { } due ? $" — à compléter avant le {due:dd/MM/yyyy}" : "")</p>
+    <h1>@Dossier.Title</h1>
+    @if (!string.IsNullOrWhiteSpace(Dossier.MessageToProvider))
+    {
+        <p class="alert info">@Dossier.MessageToProvider</p>
+    }
+    <ProgressBar Satisfied="@(Dossier.Items.Count(i => i.Required) - Dossier.MissingRequiredItems.Count)" Total="@Dossier.Items.Count(i => i.Required)" />
+    @if (Dossier.MissingRequiredItems.Count == 0)
+    {
+        <p class="alert ok" style="margin-top:12px">Toutes les pièces obligatoires ont été déposées. Merci !
+            @(Dossier.DeliveryMode == DeliveryMode.AllAtOnce ? "Le dossier complet a été transmis." : "")</p>
+    }
+    else
+    {
+        <p class="small" style="margin-top:8px">Il manque : @string.Join(", ", Dossier.MissingRequiredItems)</p>
+    }
+    <p class="small muted">@(Dossier.DeliveryMode == DeliveryMode.Incremental
+        ? "Chaque document est transmis dès son dépôt."
+        : "Les documents seront transmis ensemble lorsque toutes les pièces obligatoires seront déposées.")</p>
+</div>
+
+<ErrorAlert Message="@_error" />
+
+<div class="list">
+@foreach (var item in Dossier.Items)
+{
+    var canAdd = item.Documents.Count < item.MaxFiles && Dossier.Status is not (DossierStatus.Cancelled or DossierStatus.Closed);
+    <div class="card item @item.Status.ToString() @(item.Required ? "required" : "")">
+        <div class="row between">
+            <h3>@item.Label @if (!item.Required) { <span class="hint">(facultatif)</span> }</h3>
+            <span class="@item.Status.Css()">@item.Status.Label()</span>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(item.Description)) { <p class="small muted">@item.Description</p> }
+        @if (item.Status == ItemStatus.Rejected && item.RejectionReason is not null)
+        {
+            <p class="alert err">Document refusé : @item.RejectionReason. Merci d'en déposer un nouveau.</p>
+        }
+
+        @foreach (var doc in item.Documents)
+        {
+            <div class="doc">
+                <span class="name">@doc.FileName <span class="muted small">· @Ui.Size(doc.SizeBytes)</span></span>
+                @if (doc.AiText() is { } ai)
+                {
+                    <span class="@doc.AiVerdict.AiCss()" title="@doc.AiComment">@ai</span>
+                }
+                @if (doc.DeliveredAt is null)
+                {
+                    <button class="btn small danger" @onclick="() => RemoveAsync(doc)" disabled="@_busy">Retirer</button>
+                }
+                else
+                {
+                    <span class="badge ok">Transmis</span>
+                }
+            </div>
+            @if (doc.AiVerdict == AiVerdict.Mismatch && doc.DeliveredAt is null)
+            {
+                <p class="alert warn small">Ce document ne semble pas correspondre à la pièce demandée. Vérifiez-le ou remplacez-le si besoin.</p>
+            }
+        }
+
+        @if (canAdd)
+        {
+            <div class="row" style="margin-top:8px">
+                <label class="btn upload-btn small" style="margin:0">
+                    @(_uploading == item.Id ? "Envoi en cours…" : item.Documents.Count == 0 ? "Choisir un fichier" : "Ajouter un fichier")
+                    <InputFile OnChange="e => UploadAsync(item, e)" accept="@Ui.Accept(item.AcceptedContentTypes)" multiple="@(item.MaxFiles > 1)" disabled="@(_uploading is not null)" />
+                </label>
+                @if (AcceptsImages(item))
+                {
+                    <label class="btn upload-btn small" style="margin:0">
+                        Prendre une photo
+                        <InputFile OnChange="e => UploadAsync(item, e)" accept="image/*" capture="environment" disabled="@(_uploading is not null)" />
+                    </label>
+                }
+                <span class="small muted">@AllowedText(item)</span>
+            </div>
+        }
+    </div>
+}
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid DossierId { get; set; }
+    private DossierDto? Dossier;
+    private string? _error;
+    private bool _busy;
+    private Guid? _uploading;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try { Dossier = await Api.GetAsync<DossierDto>($"api/provider/dossiers/{DossierId}"); }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private static bool AcceptsImages(DossierItemDto item) =>
+        item.AcceptedContentTypes.Count == 0 || item.AcceptedContentTypes.Any(t => t.StartsWith("image/"));
+
+    private static string AllowedText(DossierItemDto item)
+    {
+        var types = item.AcceptedContentTypes.Count == 0 ? "tout format"
+            : string.Join(", ", item.AcceptedContentTypes.Select(t => t switch { "application/pdf" => "PDF", "image/*" => "image", _ => t.Split('/').Last() }));
+        return $"{types} · {item.MaxSizeMb} Mo max" + (item.MaxFiles > 1 ? $" · {item.MaxFiles} fichiers max" : "");
+    }
+
+    private async Task UploadAsync(DossierItemDto item, InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _uploading = item.Id;
+        var wasComplete = Dossier!.MissingRequiredItems.Count == 0;
+        try
+        {
+            var room = item.MaxFiles - item.Documents.Count;
+            foreach (var file in e.GetMultipleFiles(Math.Max(room, 1)).Take(room))
+            {
+                if (file.Size > (long)item.MaxSizeMb * 1024 * 1024)
+                {
+                    _error = $"« {file.Name} » dépasse {item.MaxSizeMb} Mo.";
+                    continue;
+                }
+                await Api.UploadAsync($"api/provider/dossiers/{DossierId}/items/{item.Id}/documents", file, (long)item.MaxSizeMb * 1024 * 1024);
+                await JS.InvokeVoidAsync("dc.embed.notify", "uploaded", new { dossierId = DossierId, item = item.Label });
+            }
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        catch (IOException) { _error = "Lecture du fichier impossible."; }
+        finally
+        {
+            _uploading = null;
+            await LoadAsync();
+            if (!wasComplete && Dossier?.MissingRequiredItems.Count == 0)
+                await JS.InvokeVoidAsync("dc.embed.notify", "complete", new { dossierId = DossierId });
+        }
+    }
+
+    private async Task RemoveAsync(DocumentDto doc)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Api.DeleteAsync($"api/provider/dossiers/{DossierId}/documents/{doc.Id}");
+            await LoadAsync();
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+}

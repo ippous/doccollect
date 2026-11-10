@@ -1,0 +1,32 @@
+{
+	email ippous@gmail.com
+}
+
+(doccollect) {
+	encode zstd gzip
+	# Dépôts jusqu'à 110 Mo (limite applicative identique).
+	request_body {
+		max_size 110MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}
+
+doccollect.jaume-eric.com {
+	import doccollect
+	reverse_proxy doccollect-prod-app-1:8080
+}
+
+doccollect-test.jaume-eric.com {
+	import doccollect
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy doccollect-test-app-1:8080
+}
+
+doccollect-dev.jaume-eric.com {
+	import doccollect
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy doccollect-dev-app-1:8080
+}

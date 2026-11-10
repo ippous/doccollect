@@ -1,0 +1,10 @@
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert @(Kind)" role="alert">@Message</div>
+}
+
+@code {
+    [Parameter] public string? Message { get; set; }
+    /// <summary>err, ok, info, warn</summary>
+    [Parameter] public string Kind { get; set; } = "err";
+}

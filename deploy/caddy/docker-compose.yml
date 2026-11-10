@@ -1,0 +1,28 @@
+# Reverse proxy partagé (HTTPS automatique Let's Encrypt) pour les trois environnements.
+# À lancer une fois sur le VPS :
+#   docker network create web
+#   cd /opt/doccollect/caddy && docker compose up -d
+name: doccollect-proxy
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [web]
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  web:
+    external: true
+    name: web

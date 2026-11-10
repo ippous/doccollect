@@ -1,0 +1,127 @@
+@page "/requester/dossiers/{Id:guid}"
+@attribute [Authorize(Roles = Roles.Requester)]
+@inject ApiClient Api
+
+<PageTitle>@(_d?.Title ?? "Dossier") — DocCollect</PageTitle>
+
+<p><a href="requester" class="small">← Dossiers</a></p>
+<ErrorAlert Message="@_error" />
+<ErrorAlert Kind="ok" Message="@_info" />
+
+@if (_d is null)
+{
+    <p>Chargement…</p>
+    return;
+}
+
+<div class="card">
+    <div class="row between">
+        <div>
+            <h1>@_d.Title</h1>
+            <p class="small muted">@(_d.Reference is null ? "" : $"Réf. {_d.Reference} · ")@_d.ProviderEmail@(_d.ProviderName is null ? "" : $" ({_d.ProviderName})")
+                · créé le @_d.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy")@(_d.DueDate is { } due ? $" · échéance {due:dd/MM/yyyy}" : "")</p>
+        </div>
+        <span class="@_d.Status.Css()">@_d.Status.Label()</span>
+    </div>
+    <ProgressBar Satisfied="@(_d.Items.Count(i => i.Required) - _d.MissingRequiredItems.Count)" Total="@_d.Items.Count(i => i.Required)" />
+    <p class="small" style="margin-top:8px">@_d.DeliveryMode.Label()@(_d.RequireRequesterValidation ? " · validation de chaque pièce" : "")</p>
+    @if (_d.MissingRequiredItems.Count > 0)
+    {
+        <p class="small">Manquant : @string.Join(", ", _d.MissingRequiredItems)</p>
+    }
+    <div class="row">
+        <button class="btn" @onclick="ZipAsync" disabled="@_busy">Tout télécharger (.zip)</button>
+        @if (_d.Status is DossierStatus.Open or DossierStatus.Complete)
+        {
+            <button class="btn" @onclick="DeliverAsync" disabled="@_busy" title="Transmet maintenant les pièces reçues par vos canaux de livraison">Transmettre maintenant</button>
+        }
+        @if (_d.Status == DossierStatus.Open)
+        {
+            <button class="btn" @onclick="RemindAsync" disabled="@_busy">Relancer le fournisseur</button>
+        }
+        @if (_d.Status is not (DossierStatus.Closed or DossierStatus.Cancelled))
+        {
+            <button class="btn ghost" @onclick="CloseAsync" disabled="@_busy">Clore</button>
+            <button class="btn danger" @onclick="CancelAsync" disabled="@_busy">Annuler la demande</button>
+        }
+    </div>
+</div>
+
+<div class="list">
+@foreach (var item in _d.Items)
+{
+    <div class="card item @item.Status.ToString() @(item.Required ? "required" : "")">
+        <div class="row between">
+            <h3>@item.Label @if (!item.Required) { <span class="hint">(facultatif)</span> }</h3>
+            <span class="@item.Status.Css()">@item.Status.Label()</span>
+        </div>
+        @if (item.Status == ItemStatus.Rejected) { <p class="small muted">Refusé : @item.RejectionReason</p> }
+        @foreach (var doc in item.Documents)
+        {
+            <div class="doc">
+                <span class="name">@doc.FileName <span class="muted small">· @Ui.Size(doc.SizeBytes) · @doc.UploadedAt.ToLocalTime().ToString("dd/MM HH:mm")</span></span>
+                @if (doc.AiText() is { } ai) { <span class="@doc.AiVerdict.AiCss()" title="@doc.AiComment">IA : @ai</span> }
+                @if (doc.DeliveredAt is not null) { <span class="badge ok">Transmis</span> }
+                <button class="btn small" @onclick="() => DownloadAsync(doc)">Télécharger</button>
+            </div>
+        }
+        @if (item.Documents.Count > 0 && item.Status is ItemStatus.Submitted or ItemStatus.Accepted)
+        {
+            <div class="row" style="margin-top:8px">
+                @if (item.Status == ItemStatus.Submitted)
+                {
+                    <button class="btn small primary" @onclick="() => AcceptAsync(item)" disabled="@_busy">Accepter</button>
+                }
+                @if (_rejecting == item.Id)
+                {
+                    <input type="text" style="flex:1;min-width:180px" placeholder="Motif du refus (envoyé au fournisseur)" @bind="_reason" />
+                    <button class="btn small danger" @onclick="() => RejectAsync(item)" disabled="@(_busy || string.IsNullOrWhiteSpace(_reason))">Confirmer le refus</button>
+                    <button class="btn small ghost" @onclick="() => _rejecting = null">Annuler</button>
+                }
+                else
+                {
+                    <button class="btn small danger" @onclick="() => { _rejecting = item.Id; _reason = null; }">Refuser…</button>
+                }
+            </div>
+        }
+    </div>
+}
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private DossierDto? _d;
+    private string? _error, _info, _reason;
+    private bool _busy;
+    private Guid? _rejecting;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try { _d = await Api.GetAsync<DossierDto>($"api/requester/dossiers/{Id}"); }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task RunAsync(Func<Task> action, string? success = null)
+    {
+        _busy = true;
+        _error = _info = null;
+        try { await action(); _info = success; await LoadAsync(); }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private Task AcceptAsync(DossierItemDto item) => RunAsync(() => Api.PostAsync($"api/requester/dossiers/{Id}/items/{item.Id}/accept"));
+    private Task RejectAsync(DossierItemDto item) => RunAsync(async () =>
+    {
+        await Api.PostAsync($"api/requester/dossiers/{Id}/items/{item.Id}/reject", new RejectItemRequest(_reason!));
+        _rejecting = null;
+    }, "Refus envoyé au fournisseur.");
+    private Task DeliverAsync() => RunAsync(() => Api.PostAsync($"api/requester/dossiers/{Id}/deliver"), "Transmission lancée.");
+    private Task RemindAsync() => RunAsync(() => Api.PostAsync($"api/requester/dossiers/{Id}/remind"), "Relance envoyée.");
+    private Task CloseAsync() => RunAsync(() => Api.PostAsync($"api/requester/dossiers/{Id}/close"));
+    private Task CancelAsync() => RunAsync(() => Api.PostAsync($"api/requester/dossiers/{Id}/cancel"));
+    private Task DownloadAsync(DocumentDto doc) => RunAsync(() => Api.DownloadAsync($"api/requester/dossiers/{Id}/documents/{doc.Id}/content", doc.FileName));
+    private Task ZipAsync() => RunAsync(() => Api.DownloadAsync($"api/requester/dossiers/{Id}/zip", $"{_d!.Reference ?? _d.Title}.zip"));
+}

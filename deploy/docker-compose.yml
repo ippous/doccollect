@@ -1,0 +1,78 @@
+# Un même fichier pour les trois environnements du VPS (dev, test, prod).
+# Chaque environnement vit dans son propre dossier (/opt/doccollect/<env>) avec son .env
+# et un nom de projet distinct : conteneurs, réseaux, volumes et base sont donc isolés.
+#
+#   cd /opt/doccollect/test && docker compose --env-file .env up -d
+#
+name: doccollect-${DC_ENV:?DC_ENV manquant (dev, test ou prod)}
+
+services:
+  app:
+    image: ghcr.io/ippous/doccollect:${DC_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # Syntaxe en liste : permet l'interpolation dans les noms (identifiant de clé de chiffrement).
+    environment:
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
+      - ConnectionStrings__Default=Host=db;Database=doccollect;Username=doccollect;Password=${POSTGRES_PASSWORD:?}
+      - App__PublicBaseUrl=${DC_PUBLIC_URL:?}
+      - App__EnvironmentLabel=${DC_ENV_LABEL:-}
+      - Encryption__CurrentKeyId=${DC_ENCRYPTION_KEY_ID:?}
+      - Encryption__Keys__${DC_ENCRYPTION_KEY_ID}=${DC_ENCRYPTION_KEY:?}
+      - Smtp__Host=${SMTP_HOST:-mailpit}
+      - Smtp__Port=${SMTP_PORT:-1025}
+      - Smtp__Security=${SMTP_SECURITY:-None}
+      - Smtp__Username=${SMTP_USERNAME:-}
+      - Smtp__Password=${SMTP_PASSWORD:-}
+      - Smtp__FromAddress=${SMTP_FROM:-no-reply@jaume-eric.com}
+      - Smtp__SubjectPrefix=${SMTP_SUBJECT_PREFIX:-}
+      - Seed__AdminEmail=${DC_ADMIN_EMAIL:-}
+      - Seed__AdminPassword=${DC_ADMIN_PASSWORD:-}
+      - Ai__Providers__mistral-eu__Enabled=${AI_MISTRAL_ENABLED:-false}
+      - Ai__Providers__mistral-eu__ApiKey=${AI_MISTRAL_KEY:-}
+      - Ai__Providers__anthropic__Enabled=${AI_ANTHROPIC_ENABLED:-false}
+      - Ai__Providers__anthropic__ApiKey=${AI_ANTHROPIC_KEY:-}
+    volumes:
+      - storage:/data
+    networks: [internal, web]
+    labels:
+      doccollect.env: ${DC_ENV}
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: doccollect
+      POSTGRES_USER: doccollect
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doccollect -d doccollect"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  # Boîte mail de capture (dev et test) : aucun e-mail ne part vers de vrais destinataires.
+  # Interface sur le VPS uniquement : ssh -L 8025:127.0.0.1:${MAILPIT_UI_PORT:-8025} vps
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    profiles: [mailpit]
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+    networks: [internal]
+
+volumes:
+  storage:
+  pgdata:
+
+networks:
+  internal:
+  # Réseau partagé avec le reverse proxy Caddy (deploy/caddy).
+  web:
+    external: true
+    name: web

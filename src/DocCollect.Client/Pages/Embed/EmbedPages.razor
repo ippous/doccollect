@@ -1,0 +1,52 @@
+@page "/embed/{Tenant}"
+@page "/embed/{Tenant}/dossiers/{DossierId:guid}"
+@layout EmbedLayout
+@attribute [Authorize(Roles = Roles.Provider)]
+@inject ApiClient Api
+
+<PageTitle>Dépôt de documents</PageTitle>
+
+@if (DossierId is { } id)
+{
+    <DossierChecklist DossierId="id" />
+    <p><a href="embed/@Tenant" class="small">← Mes autres demandes</a></p>
+}
+else if (_items is null)
+{
+    <p>Chargement…</p>
+}
+else
+{
+    <h1>Mes demandes</h1>
+    @if (_items.Count == 0)
+    {
+        <div class="card"><p class="muted">Aucune demande en cours.</p></div>
+    }
+    <div class="list">
+        @foreach (var x in _items)
+        {
+            <a class="card-link" href="embed/@Tenant/dossiers/@x.Summary.Id">
+                <div class="card tight">
+                    <div class="row between"><h3>@x.Summary.Title</h3><span class="@x.Summary.Status.Css()">@x.Summary.Status.Label()</span></div>
+                    <ProgressBar Satisfied="@x.Summary.SatisfiedCount" Total="@x.Summary.RequiredCount" />
+                </div>
+            </a>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Tenant { get; set; } = "";
+    [Parameter] public Guid? DossierId { get; set; }
+    private List<DocCollect.Client.Pages.Provider.ProviderPages.ProviderDossierRow>? _items;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (DossierId is null)
+        {
+            // En mode embarqué, on ne montre que les demandes de ce demandeur.
+            var all = await Api.GetAsync<List<DocCollect.Client.Pages.Provider.ProviderPages.ProviderDossierRow>>("api/provider/dossiers");
+            _items = all.Where(x => string.Equals(x.TenantSlug, Tenant, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+    }
+}

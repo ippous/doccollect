@@ -1,0 +1,74 @@
+@page "/requester"
+@attribute [Authorize(Roles = Roles.Requester)]
+@inject ApiClient Api
+
+<PageTitle>Dossiers — DocCollect</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Dossiers</h1>
+        <p class="muted small">@(_items?.Count ?? 0) dossier(s)</p>
+    </div>
+    <a class="btn primary" href="requester/dossiers/new">Nouvelle demande</a>
+</div>
+
+<div class="row" style="margin-bottom:12px">
+    <input type="text" placeholder="Rechercher (titre, référence, e-mail)" style="flex:1;min-width:200px" @bind="_q" @bind:after="LoadAsync" />
+    <select style="width:auto" @bind="_status" @bind:after="LoadAsync">
+        <option value="">Tous les statuts</option>
+        @foreach (var s in Enum.GetValues<DossierStatus>().Where(s => s != DossierStatus.Draft))
+        {
+            <option value="@s">@s.Label()</option>
+        }
+    </select>
+</div>
+
+<ErrorAlert Message="@_error" />
+
+@if (_items is null)
+{
+    <p>Chargement…</p>
+}
+else if (_items.Count == 0)
+{
+    <div class="card"><p class="muted">Aucun dossier. Créez une demande pour envoyer une liste de pièces à un client.</p></div>
+}
+else
+{
+    <div class="list">
+        @foreach (var d in _items)
+        {
+            <a class="card-link" href="requester/dossiers/@d.Id">
+                <div class="card tight">
+                    <div class="row between">
+                        <h3>@d.Title @if (d.Reference is not null) { <span class="muted small">· @d.Reference</span> }</h3>
+                        <span class="@d.Status.Css()">@d.Status.Label()</span>
+                    </div>
+                    <p class="small muted">@d.ProviderEmail · créé le @d.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy")
+                        @(d.DueDate is { } due ? $"· échéance {due:dd/MM/yyyy}" : "") · @d.DeliveryMode.Label()</p>
+                    <ProgressBar Satisfied="@d.SatisfiedCount" Total="@d.RequiredCount" />
+                </div>
+            </a>
+        }
+    </div>
+}
+
+@code {
+    private List<DossierSummaryDto>? _items;
+    private string? _q, _error;
+    private string _status = "";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var url = "api/requester/dossiers?";
+            if (!string.IsNullOrWhiteSpace(_q)) url += $"q={Uri.EscapeDataString(_q)}&";
+            if (!string.IsNullOrEmpty(_status)) url += $"status={_status}";
+            _items = await Api.GetAsync<List<DossierSummaryDto>>(url);
+        }
+        catch (ApiException ex) { _error = ex.Message; _items = []; }
+    }
+}

@@ -1,0 +1,123 @@
+@page "/admin/storage"
+@page "/admin/templates"
+@page "/admin/users"
+@page "/admin/ai"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Administration — DocCollect</PageTitle>
+<ErrorAlert Message="@_error" />
+<ErrorAlert Kind="ok" Message="@_info" />
+
+@switch (Section)
+{
+    case "storage":
+        <h1>Stockages de la plateforme</h1>
+        <p class="muted small">Le stockage « par défaut » reçoit les documents des demandeurs qui n'ont pas configuré le leur.
+            Sans aucun profil, les fichiers sont écrits sur le disque du serveur (Storage:FallbackLocalPath).</p>
+        <StorageProfiles AdminMode="true" />
+        break;
+
+    case "templates":
+        <TemplateManager AdminMode="true" />
+        break;
+
+    case "users":
+        <h1>Utilisateurs</h1>
+        <div class="card table-wrap">
+            <table class="table">
+                <thead><tr><th>E-mail</th><th>Rôles</th><th>2FA</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var u in _users)
+                    {
+                        <tr>
+                            <td>@u.Email</td>
+                            <td>@string.Join(", ", u.Roles)</td>
+                            <td>@(u.TwoFactorEnabled ? "oui" : "non")</td>
+                            <td class="row">
+                                @if (u.LockedOut) { <button class="btn small" @onclick='() => UserAction(u, "unlock")'>Déverrouiller</button> }
+                                @if (u.TwoFactorEnabled) { <button class="btn small danger" @onclick='() => UserAction(u, "reset-2fa")'>Réinitialiser la 2FA</button> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <form class="card" @onsubmit="InviteAdminAsync" @onsubmit:preventDefault>
+            <h2 style="margin-top:0">Inviter un administrateur</h2>
+            <input type="email" @bind="_adminEmail" required />
+            <button class="btn primary" style="margin-top:12px">Inviter</button>
+        </form>
+        break;
+
+    case "ai":
+        <h1>IA et facturation</h1>
+        <h2>Fournisseurs configurés</h2>
+        <div class="card">
+            @if (_ai.Count == 0) { <p class="muted">Aucun fournisseur : renseignez la section « Ai:Providers » de la configuration.</p> }
+            @foreach (var p in _ai) { <p><b>@p.DisplayName</b> <span class="mono small">(@p.Key)</span> · @(p.Region ?? "région non précisée") · @(p.SupportsPdf ? "images et PDF" : "images")</p> }
+        </div>
+        <h2>Consommation @DateTime.Now.Year</h2>
+        <div class="card table-wrap">
+            <table class="table">
+                <thead><tr><th>Demandeur</th><th>Mois</th><th>Documents</th><th>Jetons entrée</th><th>Jetons sortie</th></tr></thead>
+                <tbody>
+                    @foreach (var u in _usage)
+                    {
+                        <tr><td>@(_tenants.FirstOrDefault(t => t.Id == u.TenantId)?.Name ?? u.TenantId.ToString())</td><td>@u.Month</td><td>@u.Calls</td>
+                            <td>@u.InputTokens.ToString("N0")</td><td>@u.OutputTokens.ToString("N0")</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        break;
+}
+
+@code {
+    private string Section => Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('/').ElementAtOrDefault(1) ?? "";
+    private List<UserDto> _users = [];
+    private List<AiProviderInfo> _ai = [];
+    private List<AiUsageDto> _usage = [];
+    private List<TenantDto> _tenants = [];
+    private string _adminEmail = "";
+    private string? _error, _info;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _error = _info = null;
+        try
+        {
+            if (Section == "users") _users = await Api.GetAsync<List<UserDto>>("api/admin/users");
+            if (Section == "ai")
+            {
+                _ai = await Api.GetAsync<List<AiProviderInfo>>("api/admin/ai-providers");
+                _usage = await Api.GetAsync<List<AiUsageDto>>("api/admin/ai-usage");
+                _tenants = await Api.GetAsync<List<TenantDto>>("api/admin/tenants");
+            }
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task UserAction(UserDto u, string action)
+    {
+        try
+        {
+            await Api.PostAsync($"api/admin/users/{u.Id}/{action}");
+            _info = "Fait.";
+            _users = await Api.GetAsync<List<UserDto>>("api/admin/users");
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task InviteAdminAsync()
+    {
+        try
+        {
+            await Api.PostAsync("api/admin/admins/invite", new InviteUserRequest(_adminEmail, Roles.Admin, null));
+            _info = $"Invitation envoyée à {_adminEmail}.";
+            _adminEmail = "";
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+}

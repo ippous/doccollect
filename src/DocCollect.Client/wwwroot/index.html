@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>DocCollect</title>
+    <base href="/" />
+    <meta name="theme-color" content="#16324f" />
+    <meta name="description" content="Collecte sécurisée de pièces justificatives." />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="icon.svg" />
+    <link rel="apple-touch-icon" href="icon.svg" />
+    <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+    <div id="app">
+        <div class="boot">
+            <div class="boot-mark">DC</div>
+            <p>Chargement…</p>
+        </div>
+    </div>
+    <div id="blazor-error-ui" role="alert">
+        Une erreur est survenue. <a href="" class="reload">Recharger</a>
+    </div>
+    <script src="lib/qrcode/qrcode.js"></script>
+    <script src="js/interop.js"></script>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script>
+        if ('serviceWorker' in navigator && !location.pathname.startsWith('/embed/')) {
+            navigator.serviceWorker.register('service-worker.js');
+        }
+    </script>
+</body>
+</html>

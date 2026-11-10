@@ -1,0 +1,17 @@
+@page "/login"
+@attribute [AllowAnonymous]
+
+<PageTitle>Connexion — DocCollect</PageTitle>
+
+<div class="content narrow">
+    <div class="card">
+        <h1>Connexion</h1>
+        <p class="muted small">Accès sécurisé par double authentification.</p>
+        <LoginForm ReturnUrl="@ReturnUrl" />
+    </div>
+    <p class="small muted">Vous avez reçu une demande de documents ? Utilisez le lien de l'e-mail pour créer votre accès.</p>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+}

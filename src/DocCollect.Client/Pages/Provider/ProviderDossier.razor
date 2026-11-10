@@ -1,0 +1,11 @@
+@page "/provider/dossiers/{Id:guid}"
+@attribute [Authorize(Roles = Roles.Provider)]
+
+<PageTitle>Déposer mes documents — DocCollect</PageTitle>
+
+<p><a href="provider" class="small">← Toutes mes demandes</a></p>
+<DossierChecklist DossierId="Id" />
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+}

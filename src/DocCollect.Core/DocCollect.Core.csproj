@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>DocCollect.Core</RootNamespace>
+    <Description>Abstractions et services cœur : stockage générique, chiffrement, IA, livraison. Uniquement la BCL .NET.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DocCollect.Domain\DocCollect.Domain.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="DocCollect.Core.Tests" />
+  </ItemGroup>
+</Project>

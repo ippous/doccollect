@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>DocCollect.Domain</RootNamespace>
+    <Description>Modèle métier et règles (complétude, livraison). Aucune dépendance externe.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DocCollect.Shared\DocCollect.Shared.csproj" />
+  </ItemGroup>
+</Project>

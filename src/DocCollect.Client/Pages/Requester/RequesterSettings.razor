@@ -1,0 +1,206 @@
+@page "/requester/settings"
+@attribute [Authorize(Roles = Roles.Requester)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Paramètres — DocCollect</PageTitle>
+
+<h1>Paramètres</h1>
+<ErrorAlert Message="@_error" />
+<ErrorAlert Kind="ok" Message="@_saved" />
+
+@if (_tenant is null)
+{
+    <p>Chargement…</p>
+    return;
+}
+
+<div class="card">
+    <h2 style="margin-top:0">Stockage et sécurité</h2>
+    <label>Où stocker les documents reçus</label>
+    <select @bind="_storageId">
+        <option value="">Stockage de la plateforme (par défaut)</option>
+        @foreach (var p in _ownProfiles) { <option value="@p.Id">@p.Name</option> }
+    </select>
+    <label class="check" style="margin-top:12px"><input type="checkbox" @bind="_encrypt" />
+        <span>Chiffrer les documents sur le stockage <span class="hint">(AES-256 ; recommandé, surtout sur un stockage externe)</span></span></label>
+
+    <h2>Vérification par IA <span class="badge warn">option payante</span></h2>
+    <p class="small muted">Chaque document déposé est comparé au type attendu (champ « type de document » des pièces). Le résultat est une alerte, jamais un refus automatique.</p>
+    <label class="check"><input type="checkbox" @bind="_ai" /> Activer la vérification</label>
+    @if (_ai)
+    {
+        <label>Fournisseur d'IA</label>
+        <select @bind="_aiKey">
+            <option value="">— Choisir —</option>
+            @foreach (var p in _aiProviders)
+            {
+                <option value="@p.Key">@p.DisplayName@(p.Region is null ? "" : $" — {p.Region}")@(p.SupportsPdf ? "" : " (images uniquement)")</option>
+            }
+        </select>
+        <p class="hint">Choisissez selon vos contraintes de localisation des données.</p>
+    }
+
+    <h2>Intégration dans votre site</h2>
+    <label>Sites autorisés à afficher le module <span class="hint">(une origine par ligne, ex. https://www.etude-martin.fr)</span></label>
+    <textarea @bind="_origins"></textarea>
+    <p class="small">Code à insérer dans votre page :</p>
+    <pre class="card tight mono small" style="white-space:pre-wrap;overflow-wrap:anywhere">@Snippet</pre>
+
+    <button class="btn primary" @onclick="SaveAsync" disabled="@_busy">Enregistrer</button>
+</div>
+
+<h2>Canaux de transmission</h2>
+<p class="small muted">Comment les documents vous parviennent. Sans canal, ils restent disponibles dans votre espace.</p>
+<div class="list">
+    @foreach (var c in _channels)
+    {
+        <div class="card tight">
+            <div class="row between">
+                <h3>@c.Name</h3>
+                <span class="badge @(c.Enabled ? "ok" : "muted")">@c.Type.Label()@(c.Enabled ? "" : " · désactivé")</span>
+            </div>
+            <div class="row" style="margin-top:6px">
+                <button class="btn small" @onclick="() => EditChannel(c)">Modifier</button>
+                <button class="btn small danger" @onclick="() => DeleteChannelAsync(c)">Supprimer</button>
+            </div>
+        </div>
+    }
+</div>
+@if (_channel is null)
+{
+    <button class="btn" style="margin-top:8px" @onclick="NewChannel">+ Ajouter un canal</button>
+}
+else
+{
+    <form class="card" @onsubmit="SaveChannelAsync" @onsubmit:preventDefault>
+        <label>Nom</label>
+        <input type="text" @bind="_channel.Name" required />
+        <label>Type</label>
+        <select @bind="_channel.Type">
+            @foreach (var t in Enum.GetValues<DeliveryChannelType>()) { <option value="@t">@t.Label()</option> }
+        </select>
+        @switch (_channel.Type)
+        {
+            case DeliveryChannelType.EmailNotification:
+                <label>Destinataires <span class="hint">(séparés par des virgules)</span></label>
+                <input type="text" @bind='_channel.Values["To"]' />
+                <label class="check"><input type="checkbox" checked='@(_channel.Values["AttachDocuments"] == "true")'
+                    @onchange='e => _channel.Values["AttachDocuments"] = ((bool)e.Value!).ToString().ToLowerInvariant()' />
+                    <span>Joindre les documents à l'e-mail <span class="hint">(déconseillé pour des pièces sensibles ; 15 Mo max)</span></span></label>
+                break;
+            case DeliveryChannelType.Webhook:
+                <label>URL (https)</label>
+                <input type="url" @bind='_channel.Values["Url"]' />
+                <label>Secret de signature HMAC</label>
+                <input type="password" autocomplete="off" @bind='_channel.Values["Secret"]' />
+                <label class="check"><input type="checkbox" checked='@(_channel.Values["IncludeContent"] == "true")'
+                    @onchange='e => _channel.Values["IncludeContent"] = ((bool)e.Value!).ToString().ToLowerInvariant()' />
+                    <span>Inclure le contenu des fichiers (base64)</span></label>
+                break;
+            case DeliveryChannelType.StorageCopy:
+                <label>Stockage de destination</label>
+                <select @bind='_channel.Values["StorageProfileId"]'>
+                    <option value="">— Choisir —</option>
+                    @foreach (var p in _ownProfiles) { <option value="@p.Id">@p.Name</option> }
+                </select>
+                <label>Arborescence <span class="hint">({reference}, {title}, {item}, {file}, {dossier})</span></label>
+                <input type="text" class="mono" @bind='_channel.Values["PathTemplate"]' placeholder="{reference}/{item}/{file}" />
+                break;
+        }
+        <label class="check" style="margin-top:12px"><input type="checkbox" @bind="_channel.Enabled" /> Actif</label>
+        <div class="row" style="margin-top:12px">
+            <button class="btn primary" disabled="@_busy">Enregistrer</button>
+            <button type="button" class="btn ghost" @onclick="() => _channel = null">Annuler</button>
+        </div>
+    </form>
+}
+
+<h2>Mes stockages</h2>
+<p class="small muted">Votre propre serveur (SFTP/FTP de votre NAS, Azure, Google Cloud…), pour y conserver les documents ou y recevoir une copie.</p>
+<StorageProfiles OnChanged="LoadAsync" />
+
+@code {
+    private TenantDto? _tenant;
+    private List<StorageProfileDto> _ownProfiles = [];
+    private List<AiProviderInfo> _aiProviders = [];
+    private List<DeliveryChannelDto> _channels = [];
+    private string? _storageId, _aiKey, _origins, _error, _saved;
+    private bool _encrypt, _ai, _busy;
+    private ChannelEdit? _channel;
+
+    private string Snippet =>
+        $"<div data-doccollect data-tenant=\"{_tenant!.Slug}\"></div>\n<script src=\"{Nav.BaseUri}embed.js\" async></script>";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _tenant = await Api.GetAsync<TenantDto>("api/requester/tenant");
+            _ownProfiles = await Api.GetAsync<List<StorageProfileDto>>("api/requester/storage/profiles");
+            _aiProviders = await Api.GetAsync<List<AiProviderInfo>>("api/requester/ai-providers");
+            _channels = await Api.GetAsync<List<DeliveryChannelDto>>("api/requester/channels");
+            _storageId = _tenant.StorageProfileId?.ToString();
+            _encrypt = _tenant.EncryptAtRest;
+            _ai = _tenant.AiVerificationEnabled;
+            _aiKey = _tenant.AiProviderKey;
+            _origins = string.Join('\n', _tenant.AllowedEmbedOrigins);
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        _error = _saved = null;
+        try
+        {
+            _tenant = await Api.PutAsync<TenantDto>("api/requester/tenant/settings", new UpdateTenantSettingsRequest(
+                Guid.TryParse(_storageId, out var sid) ? sid : null, _encrypt, _ai, string.IsNullOrEmpty(_aiKey) ? null : _aiKey,
+                (_origins ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)));
+            _saved = "Paramètres enregistrés.";
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void NewChannel() => _channel = new ChannelEdit { Name = "Notification e-mail" };
+
+    private void EditChannel(DeliveryChannelDto c) => _channel = new ChannelEdit
+    {
+        Id = c.Id, Name = c.Name, Type = c.Type, Enabled = c.Enabled, Values = new SafeDictionary(c.Settings)
+    };
+
+    private async Task SaveChannelAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var req = new SaveDeliveryChannelRequest(_channel!.Type, _channel.Name, _channel.Values, _channel.Enabled);
+            if (_channel.Id is { } id) await Api.PutAsync<DeliveryChannelDto>($"api/requester/channels/{id}", req);
+            else await Api.PostAsync<DeliveryChannelDto>("api/requester/channels", req);
+            _channel = null;
+            _channels = await Api.GetAsync<List<DeliveryChannelDto>>("api/requester/channels");
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteChannelAsync(DeliveryChannelDto c)
+    {
+        try { await Api.DeleteAsync($"api/requester/channels/{c.Id}"); _channels.Remove(c); }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private sealed class ChannelEdit
+    {
+        public Guid? Id { get; set; }
+        public string Name { get; set; } = "";
+        public DeliveryChannelType Type { get; set; } = DeliveryChannelType.EmailNotification;
+        public bool Enabled { get; set; } = true;
+        public SafeDictionary Values { get; set; } = new();
+    }
+}

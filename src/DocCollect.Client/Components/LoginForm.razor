@@ -1,0 +1,99 @@
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+@if (_step == Step.Credentials)
+{
+    <form @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+        <label for="email">Adresse e-mail</label>
+        <input id="email" type="email" autocomplete="username" @bind="_email" required />
+        <label for="pwd">Mot de passe</label>
+        <input id="pwd" type="password" autocomplete="current-password" @bind="_password" required />
+        <ErrorAlert Message="@_error" />
+        <button class="btn primary block" style="margin-top:12px" disabled="@_busy">Se connecter</button>
+    </form>
+    <p class="small" style="margin-top:12px"><a href="forgot-password">Mot de passe oublié ?</a></p>
+}
+else
+{
+    <form @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+        @if (!_useRecovery)
+        {
+            <p>@(_method == TwoFactorMethod.Email
+                   ? "Un code vient de vous être envoyé par e-mail."
+                   : "Saisissez le code à 6 chiffres affiché par votre application d'authentification.")</p>
+            <label for="code">Code de vérification</label>
+            <input id="code" class="code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" @bind="_code" required />
+        }
+        else
+        {
+            <label for="rc">Code de récupération</label>
+            <input id="rc" type="text" class="mono" autocomplete="off" @bind="_recovery" required />
+        }
+        <ErrorAlert Message="@_error" />
+        <button class="btn primary block" style="margin-top:12px" disabled="@_busy">Valider</button>
+    </form>
+    <p class="small" style="margin-top:12px">
+        <button class="btn ghost small" @onclick="() => _useRecovery = !_useRecovery">
+            @(_useRecovery ? "Utiliser un code de vérification" : "Utiliser un code de récupération")
+        </button>
+        @if (_method == TwoFactorMethod.Email && !_useRecovery)
+        {
+            <button class="btn ghost small" @onclick="ResendAsync" disabled="@_busy">Renvoyer le code</button>
+        }
+    </p>
+}
+
+@code {
+    [Parameter] public string? ReturnUrl { get; set; }
+
+    private enum Step { Credentials, TwoFactor }
+    private Step _step;
+    private string _email = "", _password = "", _code = "", _recovery = "";
+    private bool _busy, _useRecovery;
+    private string? _error;
+    private TwoFactorMethod _method;
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = await Auth.LoginAsync(new LoginRequest(_email, _password,
+                _step == Step.TwoFactor && !_useRecovery ? _code : null,
+                _step == Step.TwoFactor && _useRecovery ? _recovery : null));
+
+            if (result.RequiresTwoFactor)
+            {
+                _step = Step.TwoFactor;
+                _method = result.Method;
+            }
+            else if (!result.Succeeded)
+            {
+                _error = result.Error ?? "Connexion impossible.";
+            }
+            else
+            {
+                var target = SafeReturnUrl();
+                Nav.NavigateTo(result.MustEnrollTwoFactor ? $"account/2fa?returnUrl={Uri.EscapeDataString(target)}" : target);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Serveur injoignable. Vérifiez votre connexion.";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ResendAsync()
+    {
+        _code = "";
+        _busy = true;
+        try { await Auth.LoginAsync(new LoginRequest(_email, _password)); _error = null; }
+        finally { _busy = false; }
+    }
+
+    /// <summary>N'accepte qu'un chemin local (pas de redirection ouverte vers un autre site).</summary>
+    private string SafeReturnUrl() =>
+        !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//") ? ReturnUrl : "/";
+}

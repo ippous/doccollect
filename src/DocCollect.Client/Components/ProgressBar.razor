@@ -1,0 +1,13 @@
+<div class="row between small">
+    <span>@Satisfied / @Total pièce(s) obligatoire(s)</span>
+    <span class="muted">@Percent %</span>
+</div>
+<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Percent">
+    <span style="width:@(Percent)%"></span>
+</div>
+
+@code {
+    [Parameter] public int Satisfied { get; set; }
+    [Parameter] public int Total { get; set; }
+    private int Percent => Total == 0 ? 100 : (int)Math.Round(100.0 * Satisfied / Total);
+}

@@ -1,0 +1,100 @@
+@page "/requester/dossiers/new"
+@attribute [Authorize(Roles = Roles.Requester)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Nouvelle demande — DocCollect</PageTitle>
+
+<h1>Nouvelle demande de documents</h1>
+<p class="muted">Le fournisseur reçoit un e-mail avec un lien sécurisé pour déposer les pièces.</p>
+
+<form @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+    <div class="card">
+        <h2 style="margin-top:0">Dossier</h2>
+        <div class="grid-2">
+            <div><label>Titre</label><input type="text" @bind="_title" required placeholder="ex. Vente Dupont — 12 rue des Lilas" /></div>
+            <div><label>Votre référence <span class="hint">(facultatif)</span></label><input type="text" @bind="_reference" /></div>
+        </div>
+        <label>Modèle de liste</label>
+        <select @bind="_templateId">
+            <option value="">— Aucun (pièces saisies ci-dessous) —</option>
+            @foreach (var t in _templates)
+            {
+                <option value="@t.Id">@t.Name @(t.Visibility == TemplateVisibility.Public ? "(catalogue)" : "")</option>
+            }
+        </select>
+        @if (SelectedTemplate is { } st)
+        {
+            <ul class="small muted">
+                @foreach (var i in st.Items) { <li>@i.Label @(i.Required ? "" : "(facultatif)")</li> }
+            </ul>
+        }
+        <details open="@(_extra.Count > 0)">
+            <summary class="small" style="cursor:pointer;margin:8px 0">Ajouter des pièces spécifiques à ce dossier (@_extra.Count)</summary>
+            <ItemsEditor Items="_extra" />
+        </details>
+    </div>
+
+    <div class="card">
+        <h2 style="margin-top:0">Fournisseur des documents</h2>
+        <div class="grid-2">
+            <div><label>E-mail</label><input type="email" @bind="_providerEmail" required /></div>
+            <div><label>Nom <span class="hint">(facultatif)</span></label><input type="text" @bind="_providerName" /></div>
+        </div>
+        <label>Message joint à la demande <span class="hint">(facultatif)</span></label>
+        <textarea @bind="_message"></textarea>
+        <div class="grid-2">
+            <div><label>Échéance <span class="hint">(facultatif)</span></label><input type="date" @bind="_dueDate" /></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="margin-top:0">Transmission</h2>
+        <label class="check"><input type="radio" name="mode" checked="@(_mode == DeliveryMode.AllAtOnce)" @onchange="() => _mode = DeliveryMode.AllAtOnce" />
+            <span>En une fois, quand toutes les pièces obligatoires sont là</span></label>
+        <label class="check"><input type="radio" name="mode" checked="@(_mode == DeliveryMode.Incremental)" @onchange="() => _mode = DeliveryMode.Incremental" />
+            <span>Au fil de l'eau, à chaque dépôt</span></label>
+        <label class="check" style="margin-top:12px"><input type="checkbox" @bind="_validation" />
+            <span>Je valide chaque pièce avant qu'elle compte comme reçue <span class="hint">(permet de refuser un document illisible)</span></span></label>
+    </div>
+
+    <ErrorAlert Message="@_error" />
+    <div class="row">
+        <button class="btn primary" disabled="@_busy">Envoyer la demande</button>
+        <a class="btn ghost" href="requester">Annuler</a>
+    </div>
+</form>
+
+@code {
+    private List<TemplateDto> _templates = [];
+    private readonly List<ItemsEditor.EditableItem> _extra = [];
+    private string _title = "", _providerEmail = "";
+    private string? _reference, _providerName, _message, _error, _templateId;
+    private DateOnly? _dueDate;
+    private DeliveryMode _mode = DeliveryMode.AllAtOnce;
+    private bool _validation, _busy;
+
+    private TemplateDto? SelectedTemplate => Guid.TryParse(_templateId, out var id) ? _templates.FirstOrDefault(t => t.Id == id) : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _templates = await Api.GetAsync<List<TemplateDto>>("api/requester/templates"); }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        if (SelectedTemplate is null && _extra.Count == 0) { _error = "Choisissez un modèle ou ajoutez au moins une pièce."; return; }
+        _busy = true;
+        try
+        {
+            var created = await Api.PostAsync<DossierDto>("api/requester/dossiers", new CreateDossierRequest(
+                _title, _reference, SelectedTemplate?.Id, _extra.Select((x, i) => x.ToDto(i)).ToList(),
+                _providerEmail, _providerName, _mode, _validation, _dueDate, _message));
+            Nav.NavigateTo($"requester/dossiers/{created.Id}");
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+}

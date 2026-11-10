@@ -1,0 +1,14 @@
+{
+  "name": "DocCollect — dépôt de documents",
+  "short_name": "DocCollect",
+  "id": "/",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f4ef",
+  "theme_color": "#16324f",
+  "lang": "fr",
+  "icons": [
+    { "src": "icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "maskable" }
+  ]
+}

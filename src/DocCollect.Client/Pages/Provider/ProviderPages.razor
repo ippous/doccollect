@@ -1,0 +1,48 @@
+@page "/provider"
+@attribute [Authorize(Roles = Roles.Provider)]
+@inject ApiClient Api
+
+<PageTitle>Documents demandés — DocCollect</PageTitle>
+
+<div class="page-head"><h1>Documents demandés</h1></div>
+<ErrorAlert Message="@_error" />
+
+@if (_items is null)
+{
+    <p>Chargement…</p>
+}
+else if (_items.Count == 0)
+{
+    <div class="card"><p class="muted">Aucune demande en cours.</p></div>
+}
+else
+{
+    <div class="list">
+        @foreach (var x in _items)
+        {
+            <a class="card-link" href="provider/dossiers/@x.Summary.Id">
+                <div class="card">
+                    <div class="row between">
+                        <h3>@x.Summary.Title</h3>
+                        <span class="@x.Summary.Status.Css()">@x.Summary.Status.Label()</span>
+                    </div>
+                    <p class="small muted">@x.TenantName @(x.Summary.DueDate is { } d ? $"· avant le {d:dd/MM/yyyy}" : "")</p>
+                    <ProgressBar Satisfied="@x.Summary.SatisfiedCount" Total="@x.Summary.RequiredCount" />
+                </div>
+            </a>
+        }
+    </div>
+}
+
+@code {
+    private List<ProviderDossierRow>? _items;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _items = await Api.GetAsync<List<ProviderDossierRow>>("api/provider/dossiers"); }
+        catch (ApiException ex) { _error = ex.Message; _items = []; }
+    }
+
+    public sealed record ProviderDossierRow(DossierSummaryDto Summary, string? TenantName, string? TenantSlug);
+}

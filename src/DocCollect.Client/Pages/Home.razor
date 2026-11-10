@@ -1,0 +1,19 @@
+@page "/"
+@attribute [AllowAnonymous]
+@inject NavigationManager Nav
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState!).User;
+        string target;
+        if (user.Identity?.IsAuthenticated != true) target = "login";
+        else if (user.HasClaim(AppAuthStateProvider.NeedsTwoFactorClaim, "true")) target = "account/2fa";
+        else if (user.IsInRole(Roles.Admin)) target = "admin";
+        else if (user.IsInRole(Roles.Requester)) target = "requester";
+        else target = "provider";
+        Nav.NavigateTo(target, replace: true);
+    }
+}

@@ -1,0 +1,89 @@
+@page "/admin"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+
+<PageTitle>Demandeurs — Administration</PageTitle>
+
+<div class="page-head">
+    <div><h1>Demandeurs</h1><p class="muted small">Études, cabinets, entreprises clientes du service.</p></div>
+</div>
+<ErrorAlert Message="@_error" />
+<ErrorAlert Kind="ok" Message="@_info" />
+
+<div class="card table-wrap">
+    <table class="table">
+        <thead><tr><th>Nom</th><th>Identifiant</th><th>Chiffrement</th><th>IA</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var t in _tenants)
+            {
+                <tr>
+                    <td>@t.Name</td>
+                    <td class="mono">@t.Slug</td>
+                    <td>@(t.EncryptAtRest ? "oui" : "non")</td>
+                    <td>@(t.AiVerificationEnabled ? t.AiProviderKey : "—")</td>
+                    <td><button class="btn small" @onclick="() => ToggleAi(t)">@(t.AiVerificationEnabled ? "Couper l'IA" : "Activer l'IA")</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<form class="card" @onsubmit="CreateAsync" @onsubmit:preventDefault>
+    <h2 style="margin-top:0">Nouveau demandeur</h2>
+    <div class="grid-2">
+        <div><label>Nom</label><input type="text" @bind="_name" required placeholder="Étude Martin" /></div>
+        <div><label>Identifiant court <span class="hint">(URL et intégration)</span></label><input type="text" class="mono" @bind="_slug" required placeholder="etude-martin" /></div>
+        <div><label>E-mail du responsable</label><input type="email" @bind="_owner" required /></div>
+    </div>
+    <p class="hint">Le responsable reçoit une invitation pour créer son accès (double authentification incluse).</p>
+    <button class="btn primary" disabled="@_busy">Créer et inviter</button>
+</form>
+
+@code {
+    private List<TenantDto> _tenants = [];
+    private List<AiProviderInfo> _ai = [];
+    private string _name = "", _slug = "", _owner = "";
+    private string? _error, _info;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _tenants = await Api.GetAsync<List<TenantDto>>("api/admin/tenants");
+            _ai = await Api.GetAsync<List<AiProviderInfo>>("api/admin/ai-providers");
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task CreateAsync()
+    {
+        _busy = true;
+        _error = _info = null;
+        try
+        {
+            await Api.PostAsync<TenantDto>("api/admin/tenants", new CreateTenantRequest(_name, _slug, _owner, null));
+            _info = $"Demandeur créé, invitation envoyée à {_owner}.";
+            _name = _slug = _owner = "";
+            await LoadAsync();
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task ToggleAi(TenantDto t)
+    {
+        _error = null;
+        var enable = !t.AiVerificationEnabled;
+        var key = enable ? t.AiProviderKey ?? _ai.FirstOrDefault()?.Key : t.AiProviderKey;
+        try
+        {
+            await Api.PutAsync<TenantDto>($"api/admin/tenants/{t.Id}/settings",
+                new UpdateTenantSettingsRequest(t.StorageProfileId, t.EncryptAtRest, enable, key, t.AllowedEmbedOrigins));
+            await LoadAsync();
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+}

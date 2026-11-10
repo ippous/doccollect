@@ -1,0 +1,34 @@
+@page "/embed/{Tenant}/login"
+@layout EmbedLayout
+@attribute [AllowAnonymous]
+@inject IHttpClientFactory Http
+
+<PageTitle>Connexion</PageTitle>
+
+<div class="card" style="max-width:440px;margin:0 auto">
+    <h1>Déposer vos documents</h1>
+    @if (_tenantName is not null)
+    {
+        <p class="muted small">Espace sécurisé de <b>@_tenantName</b>.</p>
+    }
+    <LoginForm ReturnUrl="@(ReturnUrl ?? $"/embed/{Tenant}")" />
+    <p class="small muted" style="margin-top:12px">Première visite ? Utilisez le lien reçu par e-mail pour créer votre accès.</p>
+</div>
+
+@code {
+    [Parameter] public string Tenant { get; set; } = "";
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+    private string? _tenantName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var t = await Http.CreateClient("anonymous").GetFromJsonAsync<PublicTenant>($"api/public/tenants/{Uri.EscapeDataString(Tenant)}");
+            _tenantName = t?.Name;
+        }
+        catch (HttpRequestException) { }
+    }
+
+    private sealed record PublicTenant(string Name, string Slug);
+}

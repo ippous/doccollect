@@ -1,0 +1,17 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+
+@* Mise en page minimale pour l'affichage dans le site d'un demandeur (iframe). *@
+<div class="embed">
+    <main class="content">
+        @Body
+    </main>
+    <p class="small muted" style="text-align:center;padding-bottom:8px">Dépôt sécurisé par DocCollect</p>
+</div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await JS.InvokeVoidAsync("dc.embed.start");
+    }
+}

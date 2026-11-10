@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>DocCollect.Shared</RootNamespace>
+    <Description>Contrats partagés entre l'API et le client Blazor (énumérations, DTO).</Description>
+  </PropertyGroup>
+</Project>

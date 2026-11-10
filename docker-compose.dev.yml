@@ -1,0 +1,26 @@
+# Dépendances pour développer sur son poste : PostgreSQL + Mailpit.
+#   docker compose -f docker-compose.dev.yml up -d
+#   dotnet run --project src/DocCollect.Api
+# Mailpit (e-mails capturés, codes 2FA, invitations) : http://localhost:8025
+name: doccollect-local
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: doccollect
+      POSTGRES_USER: doccollect
+      POSTGRES_PASSWORD: doccollect
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  pgdata:

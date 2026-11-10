@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DocCollect.Api/DocCollect.Api.csproj" />
+    <Project Path="src/DocCollect.Client/DocCollect.Client.csproj" />
+    <Project Path="src/DocCollect.Core/DocCollect.Core.csproj" />
+    <Project Path="src/DocCollect.Domain/DocCollect.Domain.csproj" />
+    <Project Path="src/DocCollect.Infrastructure/DocCollect.Infrastructure.csproj" />
+    <Project Path="src/DocCollect.Shared/DocCollect.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DocCollect.Api.Tests/DocCollect.Api.Tests.csproj" />
+    <Project Path="tests/DocCollect.Core.Tests/DocCollect.Core.Tests.csproj" />
+  </Folder>
+</Solution>

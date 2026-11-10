@@ -1,0 +1,127 @@
+@page "/account/2fa"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Double authentification — DocCollect</PageTitle>
+
+<div class="content narrow" style="padding:0">
+@if (_recoveryCodes is not null)
+{
+    <div class="card">
+        <h1>Double authentification activée</h1>
+        <p>Conservez ces codes de récupération en lieu sûr. Chacun permet <b>une</b> connexion si vous perdez l'accès à votre méthode habituelle.</p>
+        <div class="codes">
+            @foreach (var c in _recoveryCodes) { <span>@c</span> }
+        </div>
+        <div class="row" style="margin-top:12px">
+            <button class="btn" @onclick="CopyCodesAsync">Copier les codes</button>
+            <button class="btn primary" @onclick="Continue">J'ai noté mes codes, continuer</button>
+        </div>
+    </div>
+}
+else
+{
+    <div class="card">
+        <h1>Sécuriser votre compte</h1>
+        @if (Auth.Me?.TwoFactorEnabled != true)
+        {
+            <p class="muted">La double authentification est obligatoire pour accéder aux documents. Choisissez une méthode :</p>
+        }
+        else
+        {
+            <p class="muted">Changer de méthode de double authentification.</p>
+        }
+
+        <div class="list">
+            <label class="check"><input type="radio" name="m" checked="@(_method == TwoFactorMethod.Authenticator)" @onchange="() => SelectAsync(TwoFactorMethod.Authenticator)" />
+                <span>Application d'authentification <span class="hint">(Google Authenticator, Microsoft Authenticator…) — recommandé</span></span></label>
+            <label class="check"><input type="radio" name="m" checked="@(_method == TwoFactorMethod.Email)" @onchange="() => SelectAsync(TwoFactorMethod.Email)" />
+                <span>Code reçu par e-mail <span class="hint">(plus simple pour un usage ponctuel)</span></span></label>
+        </div>
+
+        @if (_method == TwoFactorMethod.Authenticator && _setup is not null)
+        {
+            <h2>1. Ajoutez DocCollect à votre application</h2>
+            <p class="small">Scannez le QR code, ou sur ce téléphone <a href="@_setup.AuthenticatorUri">ouvrez directement l'application</a>.</p>
+            <div class="qr">@((MarkupString)_qr)</div>
+            <p class="small">Saisie manuelle de la clé : <span class="mono">@_setup.SharedKey</span></p>
+            <h2>2. Saisissez le code affiché</h2>
+        }
+        else if (_method == TwoFactorMethod.Email)
+        {
+            <p class="small">Un code a été envoyé à <b>@Auth.Me?.Email</b>.
+                <button class="btn ghost small" @onclick="SendEmailAsync" disabled="@_busy">Renvoyer</button></p>
+        }
+
+        @if (_method != TwoFactorMethod.None)
+        {
+            <form @onsubmit="EnableAsync" @onsubmit:preventDefault>
+                <label for="code">Code de vérification</label>
+                <input id="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="8" @bind="_code" required />
+                <ErrorAlert Message="@_error" />
+                <button class="btn primary block" style="margin-top:12px" disabled="@_busy">Activer</button>
+            </form>
+        }
+    </div>
+}
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private TwoFactorMethod _method = TwoFactorMethod.None;
+    private AuthenticatorSetupResponse? _setup;
+    private string _qr = "", _code = "";
+    private string? _error;
+    private bool _busy;
+    private IReadOnlyList<string>? _recoveryCodes;
+
+    private async Task SelectAsync(TwoFactorMethod method)
+    {
+        _method = method;
+        _error = null;
+        try
+        {
+            if (method == TwoFactorMethod.Authenticator && _setup is null)
+            {
+                _setup = await Api.PostAsync<AuthenticatorSetupResponse>("api/auth/2fa/authenticator/setup");
+                _qr = await JS.InvokeAsync<string>("dc.qrSvg", _setup.AuthenticatorUri);
+            }
+            else if (method == TwoFactorMethod.Email)
+            {
+                await SendEmailAsync();
+            }
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task SendEmailAsync()
+    {
+        _busy = true;
+        try { await Api.PostAsync("api/auth/2fa/email/send-code"); }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task EnableAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = await Api.PostAsync<EnableTwoFactorResponse>("api/auth/2fa/enable", new EnableTwoFactorRequest(_method, _code));
+            if (result.Tokens is not null) await Auth.SignedInAsync(result.Tokens);
+            _recoveryCodes = result.RecoveryCodes;
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task CopyCodesAsync() => await JS.InvokeAsync<bool>("dc.copy", string.Join("\n", _recoveryCodes!));
+
+    private void Continue() =>
+        Nav.NavigateTo(!string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//") ? ReturnUrl : "/");
+}

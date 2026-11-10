@@ -1,0 +1,31 @@
+@inject NavigationManager Nav
+
+@if (_forbidden)
+{
+    <div class="card">
+        <h1>Accès refusé</h1>
+        <p class="muted">Votre compte n'a pas accès à cette page.</p>
+        <a class="btn" href="">Retour à l'accueil</a>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private bool _forbidden;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState!).User;
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        var embedPrefix = relative.StartsWith("embed/", StringComparison.OrdinalIgnoreCase)
+            ? "embed/" + relative.Split('/')[1] + "/"
+            : "";
+
+        if (user.Identity?.IsAuthenticated != true)
+            Nav.NavigateTo($"{embedPrefix}login?returnUrl={Uri.EscapeDataString("/" + relative)}", replace: true);
+        else if (user.HasClaim(AppAuthStateProvider.NeedsTwoFactorClaim, "true"))
+            Nav.NavigateTo($"account/2fa?returnUrl={Uri.EscapeDataString("/" + relative)}", replace: true);
+        else
+            _forbidden = true;
+    }
+}

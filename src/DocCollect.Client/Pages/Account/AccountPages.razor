@@ -1,0 +1,34 @@
+@page "/account"
+@attribute [Authorize]
+@inject AuthService Auth
+@inject ApiClient Api
+
+<PageTitle>Mon compte — DocCollect</PageTitle>
+
+<h1>Mon compte</h1>
+<div class="card">
+    <p><b>@Auth.Me?.Email</b></p>
+    <p class="small muted">Double authentification :
+        @(Auth.Me?.TwoFactorMethod switch { TwoFactorMethod.Authenticator => "application d'authentification", TwoFactorMethod.Email => "code par e-mail", _ => "non activée" })</p>
+    <div class="row">
+        <a class="btn" href="account/2fa">Changer de méthode</a>
+        <button class="btn" @onclick="NewCodesAsync">Générer de nouveaux codes de récupération</button>
+    </div>
+    @if (_codes is not null)
+    {
+        <p class="small" style="margin-top:12px">Les anciens codes ne sont plus valables. Notez ceux-ci :</p>
+        <div class="codes">@foreach (var c in _codes) { <span>@c</span> }</div>
+    }
+    <ErrorAlert Message="@_error" />
+</div>
+
+@code {
+    private IReadOnlyList<string>? _codes;
+    private string? _error;
+
+    private async Task NewCodesAsync()
+    {
+        try { _codes = await Api.PostAsync<List<string>>("api/auth/2fa/recovery-codes"); }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+}

@@ -1,0 +1,159 @@
+@inject ApiClient Api
+
+@* Profils de stockage : formulaire généré à partir de la description de chaque fournisseur (FTP, SFTP, Azure, GCS…). *@
+
+<ErrorAlert Message="@_error" />
+@if (_test is not null)
+{
+    <ErrorAlert Kind="@(_test.Succeeded ? "ok" : "err")" Message="@_test.Message" />
+}
+
+@if (_profiles is not null)
+{
+    <div class="list">
+        @foreach (var p in _profiles)
+        {
+            <div class="card tight">
+                <div class="row between">
+                    <h3>@p.Name @if (p.IsDefault) { <span class="badge ok">par défaut</span> }</h3>
+                    <span class="badge">@(_providers.FirstOrDefault(x => x.Type == p.ProviderType)?.DisplayName ?? p.ProviderType)</span>
+                </div>
+                <p class="small muted mono">@string.Join(" · ", p.Settings.Where(kv => kv.Key is "Host" or "RootPath" or "Container" or "Bucket").Select(kv => kv.Value))</p>
+                <div class="row">
+                    <button class="btn small" @onclick="() => Edit(p)">Modifier</button>
+                    <button class="btn small" @onclick="() => TestAsync(p)" disabled="@_busy">Tester la connexion</button>
+                    @if (!AdminMode)
+                    {
+                        <button class="btn small danger" @onclick="() => DeleteAsync(p)">Supprimer</button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (_editing is null)
+{
+    <button class="btn" style="margin-top:8px" @onclick="New">+ Ajouter un stockage</button>
+}
+else
+{
+    <form class="card" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+        <label>Nom</label>
+        <input type="text" @bind="_editing.Name" required placeholder="ex. NAS du cabinet" />
+        <label>Type</label>
+        <select value="@_editing.Type" @onchange="e => ChangeType((string)e.Value!)">
+            @foreach (var p in _providers) { <option value="@p.Type">@p.DisplayName</option> }
+        </select>
+        @if (Provider is { } provider)
+        {
+            @foreach (var f in provider.Fields)
+            {
+                <label>@f.Label @if (!f.Required) { <span class="hint">(facultatif)</span> }</label>
+                @if (f.Name is "PrivateKey" or "ServiceAccountJson" or "ConnectionString")
+                {
+                    <textarea class="mono" @bind="_editing.Values[f.Name]" placeholder="@(f.Secret && _editing.Id is not null ? "inchangé si laissé tel quel" : "")"></textarea>
+                }
+                else
+                {
+                    <input type="@(f.Secret ? "password" : "text")" autocomplete="off" @bind="_editing.Values[f.Name]" placeholder="@f.DefaultValue" />
+                }
+                @if (f.Help is not null) { <p class="hint">@f.Help</p> }
+            }
+        }
+        @if (AdminMode)
+        {
+            <label class="check"><input type="checkbox" @bind="_editing.IsDefault" /> Stockage par défaut de la plateforme</label>
+        }
+        <div class="row" style="margin-top:12px">
+            <button class="btn primary" disabled="@_busy">Enregistrer</button>
+            <button type="button" class="btn ghost" @onclick="() => _editing = null">Annuler</button>
+        </div>
+    </form>
+}
+
+@code {
+    [Parameter] public bool AdminMode { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    private string BaseUrl => AdminMode ? "api/admin/storage" : "api/requester/storage";
+
+    private List<StorageProviderInfo> _providers = [];
+    private List<StorageProfileDto>? _profiles;
+    private Editing? _editing;
+    private StorageTestResult? _test;
+    private string? _error;
+    private bool _busy;
+
+    private StorageProviderInfo? Provider => _providers.FirstOrDefault(p => p.Type == _editing?.Type);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _providers = await Api.GetAsync<List<StorageProviderInfo>>($"{BaseUrl}/providers");
+            await LoadAsync();
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task LoadAsync() => _profiles = await Api.GetAsync<List<StorageProfileDto>>($"{BaseUrl}/profiles");
+
+    private void New()
+    {
+        _editing = new Editing { Type = _providers.FirstOrDefault(p => p.Type == "sftp")?.Type ?? _providers.First().Type };
+        ChangeType(_editing.Type);
+    }
+
+    private void Edit(StorageProfileDto p) => _editing = new Editing
+    {
+        Id = p.Id, Name = p.Name, Type = p.ProviderType, IsDefault = p.IsDefault,
+        Values = _providers.First(x => x.Type == p.ProviderType).Fields.ToDictionary(f => f.Name, f => p.Settings.GetValueOrDefault(f.Name))
+    };
+
+    private void ChangeType(string type)
+    {
+        _editing!.Type = type;
+        _editing.Values = _providers.First(p => p.Type == type).Fields.ToDictionary(f => f.Name, f => (string?)null);
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var req = new SaveStorageProfileRequest(_editing!.Name, _editing.Type, _editing.Values, _editing.IsDefault);
+            if (_editing.Id is { } id) await Api.PutAsync<StorageProfileDto>($"{BaseUrl}/profiles/{id}", req);
+            else await Api.PostAsync<StorageProfileDto>($"{BaseUrl}/profiles", req);
+            _editing = null;
+            await LoadAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task TestAsync(StorageProfileDto p)
+    {
+        _busy = true;
+        _test = null;
+        try { _test = await Api.PostAsync<StorageTestResult>($"{BaseUrl}/profiles/{p.Id}/test"); }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteAsync(StorageProfileDto p)
+    {
+        try { await Api.DeleteAsync($"{BaseUrl}/profiles/{p.Id}"); await LoadAsync(); await OnChanged.InvokeAsync(); }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private sealed class Editing
+    {
+        public Guid? Id { get; set; }
+        public string Name { get; set; } = "";
+        public string Type { get; set; } = "";
+        public bool IsDefault { get; set; }
+        public Dictionary<string, string?> Values { get; set; } = [];
+    }
+}
