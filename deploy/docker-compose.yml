@@ -87,7 +87,8 @@ volumes:
 
 networks:
   internal:
-  # Réseau partagé avec le reverse proxy Caddy (deploy/caddy).
+  # Réseau partagé avec le reverse proxy HTTPS du VPS.
+  # Sur le VPS actuel : le Caddy de shetland-registre → DC_PROXY_NETWORK=shetland-registre_default
   web:
     external: true
-    name: web
+    name: ${DC_PROXY_NETWORK:-web}
