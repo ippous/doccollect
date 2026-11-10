@@ -30,6 +30,12 @@ Un stockage ne peut être **supprimé que s'il est vide et inutilisé** : aucun 
 
 Liste des fournisseurs d'IA configurés (avec leur localisation) et consommation mensuelle par demandeur : nombre de documents vérifiés et jetons consommés, base de la facturation de l'option.
 
+## Journaux et e-mails
+
+**Journaux** : derniers événements de l'application (filtre par niveau, recherche, actualisation automatique, détail des exceptions). Ils sont conservés en mémoire (5 000 entrées, remis à zéro au redémarrage) ; l'historique complet reste disponible avec `docker compose logs app` sur le VPS.
+
+En haut de la page, l'état de l'**envoi des e-mails** : fonctionne / en échec, avec le message technique du serveur d'envoi (authentification refusée, serveur injoignable…), un bouton d'e-mail de test et les transmissions en échec de tous les demandeurs.
+
 ## Exploitation
 
 - Santé : `https://doccollect.jaume-eric.com/healthz`.

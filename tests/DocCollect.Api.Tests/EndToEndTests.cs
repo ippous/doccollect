@@ -325,4 +325,29 @@ public class EndToEndTests : IClassFixture<ApiFactory>
         Assert.NotNull(replacement);
         try { Directory.Delete(root, true); } catch { }
     }
+
+    [Fact]
+    public async Task Requester_can_check_and_test_email_sending()
+    {
+        var admin = await AdminAsync();
+        var requester = await NewTenantRequesterAsync(admin, "etude-mail");
+        var status = await requester.GetFromJsonAsync<EmailStatusDto>("/api/requester/email/status");
+        Assert.NotNull(status);
+        Assert.Null(status!.LastFailureDetail); // jamais de détail technique pour un demandeur
+
+        var test = await (await requester.PostAsync("/api/requester/email/test", null)).Content.ReadFromJsonAsync<EmailTestResult>();
+        Assert.True(test!.Succeeded);
+        Assert.Contains(_f.Emails.Sent, m => m.Subject == "Test d'envoi DocCollect" && m.To.Contains("owner@etude-mail.test"));
+    }
+
+    [Fact]
+    public async Task Admin_can_read_logs_but_requester_cannot()
+    {
+        var admin = await AdminAsync();
+        var logs = await admin.GetFromJsonAsync<List<LogEntryDto>>("/api/admin/logs?level=Information&take=50");
+        Assert.NotNull(logs);
+        Assert.NotEmpty(logs!); // au minimum les journaux de démarrage
+        var requester = await NewTenantRequesterAsync(admin, "etude-logs");
+        Assert.Equal(HttpStatusCode.Forbidden, (await requester.GetAsync("/api/admin/logs")).StatusCode);
+    }
 }

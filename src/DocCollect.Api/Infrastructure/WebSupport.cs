@@ -22,13 +22,15 @@ public static class ErrorHandling
             DomainException d => (StatusCodes.Status400BadRequest, new ApiError(d.Code, d.Message)),
             NotFoundException n => (StatusCodes.Status404NotFound, new ApiError("not_found", n.Message)),
             UnauthorizedAccessException => (StatusCodes.Status403Forbidden, new ApiError("forbidden", "Accès refusé.")),
+            DocCollect.Core.Notifications.EmailSendException m => (StatusCodes.Status502BadGateway, new ApiError("email_unavailable",
+                $"{m.Message} L'opération a été enregistrée, mais le destinataire n'a pas été prévenu.")),
             StorageException s => (StatusCodes.Status502BadGateway, new ApiError("storage_unavailable", $"Stockage indisponible : {s.Message}")),
             CryptographicException => (StatusCodes.Status500InternalServerError, new ApiError("integrity_error", "Le document stocké est illisible ou altéré.")),
             BadHttpRequestException b => (b.StatusCode, new ApiError("bad_request",
                 b.StatusCode == StatusCodes.Status413PayloadTooLarge ? "Fichier trop volumineux." : "Requête invalide.")),
             _ => (StatusCodes.Status500InternalServerError, new ApiError("internal_error", "Erreur interne. Elle a été journalisée."))
         };
-        if (status >= 500) logger.LogError(ex, "Erreur non gérée sur {Path}", ctx.Request.Path);
+        if (status >= 500) logger.LogError(ex, "Erreur sur {Method} {Path}", ctx.Request.Method, ctx.Request.Path);
         ctx.Response.StatusCode = status;
         await ctx.Response.WriteAsJsonAsync(error);
     }));

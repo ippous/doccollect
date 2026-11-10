@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+builder.AddMemoryLogs(); // derniers journaux consultables par l'admin
 
 const long MaxUploadBytes = 110L * 1024 * 1024;
 builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = MaxUploadBytes);
@@ -103,6 +104,7 @@ app.MapAdminEndpoints();
 app.MapRequesterEndpoints();
 app.MapProviderEndpoints();
 app.MapPublicEndpoints();
+app.MapMonitoringEndpoints();
 app.MapGet("/api/config", (IConfiguration c) => new { environment = c["App:EnvironmentLabel"] }).AllowAnonymous();
 app.MapFallbackToFile("index.html").AllowAnonymous();
 

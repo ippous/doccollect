@@ -90,7 +90,12 @@ public static class AuthEndpoints
             if (method == TwoFactorMethod.Email)
             {
                 var code = await users.GenerateTwoFactorTokenAsync(user, TokenOptions.DefaultEmailProvider);
-                await email.SendAsync(EmailTemplates.TwoFactorCode(user.Email!, code));
+                try { await email.SendAsync(EmailTemplates.TwoFactorCode(user.Email!, code)); }
+                catch (EmailSendException ex)
+                {
+                    return Fail($"Le code de connexion n'a pas pu être envoyé ({ex.Category}). Utilisez un code de récupération ou réessayez plus tard.",
+                        StatusCodes.Status502BadGateway);
+                }
             }
             return Results.Ok(new LoginResponse(false, RequiresTwoFactor: true, Method: method));
         }

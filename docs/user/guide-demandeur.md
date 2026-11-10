@@ -50,6 +50,7 @@ Des relances automatiques partent chaque semaine pour les dossiers incomplets, e
 - **Stockage** : par défaut, celui de la plateforme ; vous pouvez utiliser le vôtre (NAS en SFTP, Azure, Google Cloud). **Chiffrement** recommandé. Un stockage se supprime seulement lorsqu'il est vide et plus utilisé (ni comme stockage principal, ni par un canal de copie).
 - **Vérification par IA** (option payante) : choix du fournisseur selon vos contraintes de localisation.
 - **Intégration à votre site** : déclarez l'adresse de votre site et copiez le code fourni dans votre page.
+- **Envoi des e-mails** : indique si les e-mails partent (invitations, codes de connexion, notifications), avec un bouton pour vous envoyer un e-mail de test, et la liste de vos transmissions en échec des 7 derniers jours (nouvel essai prévu ou abandonnée).
 - **Canaux de transmission** : e-mail de notification (les documents restent dans votre espace), webhook vers votre logiciel, copie automatique vers votre stockage.
 
 ## 6. Équipe

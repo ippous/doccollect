@@ -205,6 +205,35 @@ public sealed record AiProviderInfo(string Key, string DisplayName, string? Regi
 
 public sealed record AiUsageDto(Guid TenantId, int Year, int Month, int Calls, long InputTokens, long OutputTokens);
 
+// ---------- Supervision ----------
+
+/// <summary>État de l'envoi des e-mails. Working : true = fonctionne, false = en échec, null = aucun envoi depuis le démarrage.
+/// LastFailureDetail n'est renseigné que pour l'administrateur.</summary>
+public sealed record EmailStatusDto(
+    bool? Working,
+    DateTimeOffset? LastSuccessAt,
+    DateTimeOffset? LastFailureAt,
+    string? LastFailureReason,
+    string? LastFailureDetail,
+    int SentCount,
+    int FailedCount,
+    IReadOnlyList<DeliveryFailureDto> RecentFailures);
+
+public sealed record DeliveryFailureDto(
+    Guid DossierId,
+    string DossierTitle,
+    string ChannelName,
+    DeliveryChannelType ChannelType,
+    DeliveryStatus Status,
+    int Attempts,
+    string? LastError,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? NextAttemptAt);
+
+public sealed record EmailTestResult(bool Succeeded, string Message);
+
+public sealed record LogEntryDto(long Id, DateTimeOffset At, string Level, string Category, string Message, string? Exception);
+
 // ---------- Divers ----------
 
 public sealed record ApiError(string Code, string Message);

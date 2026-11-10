@@ -1,0 +1,108 @@
+@inject ApiClient Api
+
+@* État de l'envoi des e-mails, test d'envoi et transmissions en échec. AdminMode : détail technique visible. *@
+
+<div class="card">
+    <div class="row between">
+        <h2 style="margin:0">Envoi des e-mails</h2>
+        @if (_status is not null)
+        {
+            <span class="badge @(_status.Working switch { true => "ok", false => "err", _ => "" })">
+                @(_status.Working switch { true => "Fonctionne", false => "En échec", _ => "Pas encore d'envoi" })
+            </span>
+        }
+    </div>
+
+    @if (_status is null)
+    {
+        <p class="small muted">Chargement…</p>
+    }
+    else
+    {
+        <p class="small muted" style="margin-top:8px">
+            @if (_status.LastSuccessAt is { } ok) { <span>Dernier envoi réussi : @ok.ToLocalTime().ToString("dd/MM HH:mm"). </span> }
+            @if (_status.LastFailureAt is { } ko) { <span>Dernier échec : @ko.ToLocalTime().ToString("dd/MM HH:mm"). </span> }
+            @if (_status.Working is null) { <span>Aucun e-mail envoyé depuis le dernier démarrage du service : faites un test.</span> }
+            <span>@_status.SentCount envoyé(s), @_status.FailedCount échec(s) depuis le démarrage.</span>
+        </p>
+        @if (_status.Working == false)
+        {
+            <div class="alert err">
+                Les e-mails ne partent plus : @_status.LastFailureReason.
+                @if (AdminMode && _status.LastFailureDetail is not null)
+                {
+                    <div class="mono small" style="margin-top:4px">@_status.LastFailureDetail</div>
+                }
+                else if (!AdminMode)
+                {
+                    <div class="small">Les invitations, codes de connexion et notifications ne sont pas reçus. L'administrateur de la plateforme doit corriger la configuration.</div>
+                }
+            </div>
+        }
+        <div class="row">
+            <button class="btn small" @onclick="TestAsync" disabled="@_busy">@(_busy ? "Envoi…" : "M'envoyer un e-mail de test")</button>
+            <button class="btn small ghost" @onclick="LoadAsync" disabled="@_busy">Actualiser</button>
+        </div>
+        @if (_test is not null)
+        {
+            <ErrorAlert Kind="@(_test.Succeeded ? "ok" : "err")" Message="@_test.Message" />
+        }
+
+        @if (_status.RecentFailures.Count > 0)
+        {
+            <h3 style="margin-top:16px">Transmissions en échec (7 derniers jours)</h3>
+            <div class="table-wrap">
+                <table class="table">
+                    <thead><tr><th>Dossier</th><th>Canal</th><th>État</th><th>Erreur</th></tr></thead>
+                    <tbody>
+                        @foreach (var f in _status.RecentFailures)
+                        {
+                            <tr>
+                                <td><a href="@(AdminMode ? "#" : $"requester/dossiers/{f.DossierId}")">@f.DossierTitle</a></td>
+                                <td>@f.ChannelName <span class="muted small">(@f.ChannelType.Label())</span></td>
+                                <td>
+                                    @if (f.Status == DeliveryStatus.Failed) { <span class="badge err">abandonnée</span> }
+                                    else { <span class="badge warn">nouvel essai @(f.NextAttemptAt?.ToLocalTime().ToString("HH:mm"))</span> }
+                                    <span class="small muted">@f.Attempts essai(s)</span>
+                                </td>
+                                <td class="small">@f.LastError</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+    <ErrorAlert Message="@_error" />
+</div>
+
+@code {
+    [Parameter] public bool AdminMode { get; set; }
+    private string BaseUrl => AdminMode ? "api/admin/email" : "api/requester/email";
+    private EmailStatusDto? _status;
+    private EmailTestResult? _test;
+    private string? _error;
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try { _status = await Api.GetAsync<EmailStatusDto>($"{BaseUrl}/status"); }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task TestAsync()
+    {
+        _busy = true;
+        _test = null;
+        try
+        {
+            _test = await Api.PostAsync<EmailTestResult>($"{BaseUrl}/test");
+            await LoadAsync();
+        }
+        catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+}

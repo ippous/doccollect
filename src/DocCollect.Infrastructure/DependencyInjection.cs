@@ -66,7 +66,11 @@ public static class DependencyInjection
         services.AddScoped<DocumentIngestionService>();
 
         // E-mail et livraison
-        services.AddSingleton<IEmailSender, SmtpEmailSender>();
+        services.AddSingleton<SmtpEmailSender>();
+        services.AddSingleton<EmailHealth>();
+        services.AddSingleton<IEmailSender>(sp => new MonitoredEmailSender(
+            sp.GetRequiredService<SmtpEmailSender>(), sp.GetRequiredService<EmailHealth>(),
+            sp.GetRequiredService<TimeProvider>(), SmtpErrorClassifier.Classify));
         services.AddHttpClient<WebhookDeliveryHandler>(c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddScoped<IDeliveryHandler>(sp => sp.GetRequiredService<WebhookDeliveryHandler>());
         services.AddScoped<IDeliveryHandler, StorageCopyDeliveryHandler>();

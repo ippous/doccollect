@@ -1,0 +1,105 @@
+@page "/admin/logs"
+@attribute [Authorize(Roles = Roles.Admin)]
+@implements IDisposable
+@inject ApiClient Api
+
+<PageTitle>Journaux — Administration</PageTitle>
+
+<h1>Journaux</h1>
+<p class="muted small">Derniers événements de l'application (mémoire du serveur, remise à zéro au redémarrage). Historique complet : <span class="mono">docker compose logs app</span> sur le VPS.</p>
+
+<EmailStatusPanel AdminMode="true" />
+
+<div class="row" style="margin:12px 0">
+    <select style="width:auto" @bind="_level" @bind:after="ReloadAsync">
+        <option value="Information">Information et plus</option>
+        <option value="Warning">Avertissements et erreurs</option>
+        <option value="Error">Erreurs seulement</option>
+    </select>
+    <input type="text" style="flex:1;min-width:180px" placeholder="Rechercher (message, catégorie, exception)" @bind="_q" @bind:after="ReloadAsync" />
+    <label class="check" style="margin:0"><input type="checkbox" @bind="_auto" @bind:after="ToggleAuto" /> Actualisation auto (5 s)</label>
+    <button class="btn small" @onclick="ReloadAsync">Actualiser</button>
+</div>
+
+<ErrorAlert Message="@_error" />
+
+@if (_entries.Count == 0)
+{
+    <div class="card"><p class="muted">Aucune entrée.</p></div>
+}
+else
+{
+    <div class="card table-wrap" style="padding:0">
+        <table class="table">
+            <thead><tr><th style="width:110px">Heure</th><th style="width:90px">Niveau</th><th>Message</th></tr></thead>
+            <tbody>
+                @foreach (var e in _entries)
+                {
+                    <tr>
+                        <td class="mono small">@e.At.ToLocalTime().ToString("dd/MM HH:mm:ss")</td>
+                        <td><span class="badge @LevelCss(e.Level)">@e.Level</span></td>
+                        <td>
+                            <div style="overflow-wrap:anywhere">@e.Message</div>
+                            <div class="small muted mono">@e.Category</div>
+                            @if (e.Exception is not null)
+                            {
+                                <details><summary class="small" style="cursor:pointer">Exception</summary>
+                                    <pre class="mono small" style="white-space:pre-wrap;overflow-wrap:anywhere">@e.Exception</pre>
+                                </details>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<LogEntryDto> _entries = [];
+    private string _level = "Information";
+    private string? _q, _error;
+    private bool _auto;
+    private Timer? _timer;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private string Query(long? afterId = null) =>
+        $"api/admin/logs?level={_level}&take=300" + (string.IsNullOrWhiteSpace(_q) ? "" : $"&q={Uri.EscapeDataString(_q)}")
+        + (afterId is null ? "" : $"&afterId={afterId}");
+
+    private async Task ReloadAsync()
+    {
+        try { _entries = await Api.GetAsync<List<LogEntryDto>>(Query()); _error = null; }
+        catch (ApiException ex) { _error = ex.Message; }
+    }
+
+    private async Task PollAsync()
+    {
+        try
+        {
+            var newer = await Api.GetAsync<List<LogEntryDto>>(Query(_entries.FirstOrDefault()?.Id));
+            if (newer.Count > 0)
+            {
+                _entries = [.. newer, .. _entries.Take(Math.Max(0, 500 - newer.Count))];
+                StateHasChanged();
+            }
+        }
+        catch (ApiException) { /* prochaine tentative au tick suivant */ }
+    }
+
+    private void ToggleAuto()
+    {
+        _timer?.Dispose();
+        _timer = _auto ? new Timer(_ => InvokeAsync(PollAsync), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5)) : null;
+    }
+
+    private static string LevelCss(string level) => level switch
+    {
+        "Warning" => "warn",
+        "Error" or "Critical" => "err",
+        _ => ""
+    };
+
+    public void Dispose() => _timer?.Dispose();
+}

@@ -53,3 +53,19 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options, ILogger<SmtpE
         logger.LogInformation("E-mail « {Subject} » envoyé à {Count} destinataire(s).", message.Subject, message.To.Count);
     }
 }
+
+/// <summary>Traduit une erreur d'envoi en libellé compréhensible par un demandeur (sans détail technique).</summary>
+public static class SmtpErrorClassifier
+{
+    public static string Classify(Exception ex) => ex switch
+    {
+        MailKit.Security.AuthenticationException => "le serveur d'envoi a refusé l'authentification",
+        MailKit.Net.Smtp.SmtpCommandException { StatusCode: MailKit.Net.Smtp.SmtpStatusCode.MailboxUnavailable or MailKit.Net.Smtp.SmtpStatusCode.MailboxNameNotAllowed }
+            => "adresse de destination refusée",
+        MailKit.Net.Smtp.SmtpCommandException => "le serveur d'envoi a refusé le message",
+        MailKit.Security.SslHandshakeException => "connexion sécurisée au serveur d'envoi impossible",
+        System.Net.Sockets.SocketException or TimeoutException or OperationCanceledException => "serveur d'envoi injoignable",
+        MailKit.ServiceNotConnectedException or MailKit.Net.Smtp.SmtpProtocolException or IOException => "connexion au serveur d'envoi interrompue",
+        _ => "erreur du serveur d'envoi"
+    };
+}
