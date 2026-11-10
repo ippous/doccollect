@@ -38,7 +38,7 @@ Toutes les routes sont sous `/api`, en JSON (énumérations en texte). Authentif
 
 ## Administration — `/api/admin` (rôle Admin + 2FA)
 
-Demandeurs, utilisateurs (déverrouillage, réinitialisation 2FA, invitation d'admins), stockages plateforme, modèles publics, fournisseurs IA, consommation IA, journal d'audit.
+Demandeurs, utilisateurs (déverrouillage, réinitialisation 2FA, invitation d'admins), stockages (`DELETE /storage/profiles/{id}` si vide et inutilisé), modèles publics, fournisseurs IA, consommation IA, journal d'audit.
 
 ## Webhook de livraison
 

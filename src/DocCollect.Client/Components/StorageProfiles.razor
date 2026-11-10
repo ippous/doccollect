@@ -19,14 +19,30 @@
                     <span class="badge">@(_providers.FirstOrDefault(x => x.Type == p.ProviderType)?.DisplayName ?? p.ProviderType)</span>
                 </div>
                 <p class="small muted mono">@string.Join(" · ", p.Settings.Where(kv => kv.Key is "Host" or "RootPath" or "Container" or "Bucket").Select(kv => kv.Value))</p>
+                <p class="small">@(p.DocumentCount == 0 ? "Vide" : $"{p.DocumentCount} document(s)")</p>
                 <div class="row">
-                    <button class="btn small" @onclick="() => Edit(p)">Modifier</button>
-                    <button class="btn small" @onclick="() => TestAsync(p)" disabled="@_busy">Tester la connexion</button>
-                    @if (!AdminMode)
+                    @if (!AdminMode || p.TenantId is null)
                     {
-                        <button class="btn small danger" @onclick="() => DeleteAsync(p)">Supprimer</button>
+                        <button class="btn small" @onclick="() => Edit(p)">Modifier</button>
+                    }
+                    <button class="btn small" @onclick="() => TestAsync(p)" disabled="@_busy">Tester la connexion</button>
+                    @if (_confirmDelete == p.Id)
+                    {
+                        <span class="small">Supprimer définitivement ce stockage ?</span>
+                        <button class="btn small danger" @onclick="() => DeleteAsync(p)" disabled="@_busy">Oui, supprimer</button>
+                        <button class="btn small ghost" @onclick="() => _confirmDelete = null">Annuler</button>
+                    }
+                    else
+                    {
+                        <button class="btn small danger" disabled="@(p.DeleteBlockedReason is not null)"
+                                title="@(p.DeleteBlockedReason is null ? "Supprimer ce stockage vide" : $"Suppression impossible : {p.DeleteBlockedReason}")"
+                                @onclick="() => _confirmDelete = p.Id">Supprimer</button>
                     }
                 </div>
+                @if (p.DeleteBlockedReason is not null)
+                {
+                    <p class="hint">Suppression impossible : @p.DeleteBlockedReason.</p>
+                }
             </div>
         }
     </div>
@@ -83,6 +99,7 @@ else
     private StorageTestResult? _test;
     private string? _error;
     private bool _busy;
+    private Guid? _confirmDelete;
 
     private StorageProviderInfo? Provider => _providers.FirstOrDefault(p => p.Type == _editing?.Type);
 
@@ -144,8 +161,12 @@ else
 
     private async Task DeleteAsync(StorageProfileDto p)
     {
+        _busy = true;
+        _error = null;
+        _test = null;
         try { await Api.DeleteAsync($"{BaseUrl}/profiles/{p.Id}"); await LoadAsync(); await OnChanged.InvokeAsync(); }
         catch (ApiException ex) { _error = ex.Message; }
+        finally { _busy = false; _confirmDelete = null; }
     }
 
     private sealed class Editing

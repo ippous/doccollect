@@ -148,7 +148,7 @@ public static class AdminEndpoints
         g.MapGet("/storage/providers", (StorageProviderRegistry registry) => registry.Describe());
 
         g.MapGet("/storage/profiles", async (AppDbContext db, StorageProfileService svc) =>
-            (await db.StorageProfiles.OrderBy(p => p.TenantId).ThenBy(p => p.Name).ToListAsync()).Select(svc.ToDto));
+            await svc.ToDtosAsync(await db.StorageProfiles.OrderBy(p => p.TenantId).ThenBy(p => p.Name).ToListAsync()));
 
         g.MapPost("/storage/profiles", async (SaveStorageProfileRequest req, AppDbContext db, StorageProfileService svc) =>
         {
@@ -179,6 +179,16 @@ public static class AdminEndpoints
         {
             var profile = await db.StorageProfiles.FirstOrDefaultAsync(p => p.Id == id, ct) ?? throw new NotFoundException("Profil introuvable.");
             return await svc.TestAsync(profile, ct);
+        });
+
+        // Suppression autorisée seulement si le stockage est vide et inutilisé (plateforme ou demandeur).
+        g.MapDelete("/storage/profiles/{id:guid}", async (Guid id, AppDbContext db, StorageProfileService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var profile = await db.StorageProfiles.FirstOrDefaultAsync(p => p.Id == id, ct) ?? throw new NotFoundException("Profil introuvable.");
+            await svc.DeleteAsync(profile, ct);
+            db.AuditEvents.Add(new AuditEvent { TenantId = profile.TenantId, UserId = http.User.UserId(), Action = "storage.deleted", Details = profile.Name });
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
         });
 
         // ---------- Modèles publics ----------

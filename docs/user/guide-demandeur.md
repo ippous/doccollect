@@ -47,7 +47,7 @@ Des relances automatiques partent chaque semaine pour les dossiers incomplets, e
 
 ## 5. Paramètres
 
-- **Stockage** : par défaut, celui de la plateforme ; vous pouvez utiliser le vôtre (NAS en SFTP, Azure, Google Cloud). **Chiffrement** recommandé.
+- **Stockage** : par défaut, celui de la plateforme ; vous pouvez utiliser le vôtre (NAS en SFTP, Azure, Google Cloud). **Chiffrement** recommandé. Un stockage se supprime seulement lorsqu'il est vide et plus utilisé (ni comme stockage principal, ni par un canal de copie).
 - **Vérification par IA** (option payante) : choix du fournisseur selon vos contraintes de localisation.
 - **Intégration à votre site** : déclarez l'adresse de votre site et copiez le code fourni dans votre page.
 - **Canaux de transmission** : e-mail de notification (les documents restent dans votre espace), webhook vers votre logiciel, copie automatique vers votre stockage.

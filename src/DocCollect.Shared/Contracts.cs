@@ -75,13 +75,17 @@ public sealed record StorageProviderInfo(string Type, string DisplayName, IReadO
 
 public sealed record StorageSettingField(string Name, string Label, bool Required, bool Secret, string? DefaultValue = null, string? Help = null);
 
+/// <param name="DocumentCount">Nombre de documents stockés sur ce profil.</param>
+/// <param name="DeleteBlockedReason">Pourquoi le profil ne peut pas être supprimé ; null s'il est vide et inutilisé.</param>
 public sealed record StorageProfileDto(
     Guid Id,
     Guid? TenantId,
     string Name,
     string ProviderType,
     IReadOnlyDictionary<string, string?> Settings,
-    bool IsDefault);
+    bool IsDefault,
+    int DocumentCount = 0,
+    string? DeleteBlockedReason = null);
 
 public sealed record SaveStorageProfileRequest(
     string Name,

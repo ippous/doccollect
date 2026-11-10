@@ -93,6 +93,67 @@ public sealed class StorageProfileService(
         return new StorageProfileDto(p.Id, p.TenantId, p.Name, p.ProviderType, settings, p.IsDefault);
     }
 
+    // ---------- Suppression d'un profil vide ----------
+
+    /// <summary>
+    /// Raisons empêchant de supprimer le profil (vide = supprimable) : documents stockés, demandeur qui l'utilise
+    /// comme stockage, canal « copie vers mon stockage » qui le cible, ou profil par défaut de la plateforme.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetDeleteBlockersAsync(StorageProfile profile, CancellationToken ct = default)
+    {
+        var reasons = new List<string>();
+        var documents = await db.Documents.CountAsync(d => d.StorageProfileId == profile.Id, ct);
+        if (documents > 0)
+            reasons.Add($"il contient {documents} document(s)");
+
+        var tenants = await db.Tenants.Where(t => t.StorageProfileId == profile.Id).Select(t => t.Name).ToListAsync(ct);
+        if (tenants.Count > 0)
+            reasons.Add($"il est le stockage de : {string.Join(", ", tenants)}");
+
+        var channels = await db.DeliveryChannels
+            .Where(c => c.Type == DeliveryChannelType.StorageCopy && (profile.TenantId == null || c.TenantId == profile.TenantId))
+            .ToListAsync(ct);
+        var targeting = channels
+            .Where(c => string.Equals(StorageSettings.Deserialize(c.SettingsJson).Get("StorageProfileId"), profile.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+            .Select(c => $"« {c.Name} »").ToList();
+        if (targeting.Count > 0)
+            reasons.Add($"il est la destination du canal {string.Join(", ", targeting)}");
+
+        if (profile.TenantId is null && profile.IsDefault)
+            reasons.Add("c'est le stockage par défaut de la plateforme (désignez-en un autre d'abord)");
+        return reasons;
+    }
+
+    public async Task DeleteAsync(StorageProfile profile, CancellationToken ct = default)
+    {
+        var reasons = await GetDeleteBlockersAsync(profile, ct);
+        if (reasons.Count > 0)
+            throw new DomainException(ErrorCodes.InvalidState,
+                $"Le stockage « {profile.Name} » ne peut pas être supprimé : {string.Join(" ; ", reasons)}.");
+        db.StorageProfiles.Remove(profile);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>DTO enrichis (nombre de documents, motif empêchant la suppression) pour l'écran de gestion.</summary>
+    public async Task<List<StorageProfileDto>> ToDtosAsync(IReadOnlyList<StorageProfile> profiles, CancellationToken ct = default)
+    {
+        var ids = profiles.Select(p => p.Id).ToList();
+        var counts = (await db.Documents.Where(d => ids.Contains(d.StorageProfileId))
+                .GroupBy(d => d.StorageProfileId).Select(g => new { g.Key, Count = g.Count() }).ToListAsync(ct))
+            .ToDictionary(x => x.Key, x => x.Count);
+        var result = new List<StorageProfileDto>();
+        foreach (var p in profiles)
+        {
+            var reasons = await GetDeleteBlockersAsync(p, ct);
+            result.Add(ToDto(p) with
+            {
+                DocumentCount = counts.GetValueOrDefault(p.Id),
+                DeleteBlockedReason = reasons.Count == 0 ? null : string.Join(" ; ", reasons)
+            });
+        }
+        return result;
+    }
+
     public async Task<StorageTestResult> TestAsync(StorageProfile profile, CancellationToken ct)
     {
         try { return await Build(profile).TestAsync(ct); }

@@ -252,4 +252,77 @@ public class EndToEndTests : IClassFixture<ApiFactory>
         var channels = await requester.GetFromJsonAsync<List<DeliveryChannelDto>>("/api/requester/channels");
         Assert.Equal("••••••", channels!.Single().Settings["Secret"]);
     }
+
+    [Fact]
+    public async Task Storage_profile_can_be_deleted_only_when_empty_and_unused()
+    {
+        var admin = await AdminAsync();
+        var requester = await NewTenantRequesterAsync(admin, "etude-stock");
+        var root = Path.Combine(Path.GetTempPath(), "dc-stock-" + Guid.NewGuid().ToString("N"));
+
+        async Task<StorageProfileDto> CreateAsync(string name) =>
+            (await (await requester.PostAsJsonAsync("/api/requester/storage/profiles",
+                new SaveStorageProfileRequest(name, "local", new() { ["RootPath"] = Path.Combine(root, name) }, false)))
+                .Content.ReadFromJsonAsync<StorageProfileDto>())!;
+
+        // 1. Vide et inutilisé : supprimable.
+        var empty = await CreateAsync("vide");
+        var listed = await requester.GetFromJsonAsync<List<StorageProfileDto>>("/api/requester/storage/profiles");
+        Assert.Null(listed!.Single(p => p.Id == empty.Id).DeleteBlockedReason);
+        Assert.Equal(HttpStatusCode.NoContent, (await requester.DeleteAsync($"/api/requester/storage/profiles/{empty.Id}")).StatusCode);
+
+        // 2. Utilisé comme stockage du demandeur, puis contenant un document : refusé avec le motif.
+        var used = await CreateAsync("utilise");
+        (await requester.PutAsJsonAsync("/api/requester/tenant/settings", new UpdateTenantSettingsRequest(used.Id, true, false, null, []))).EnsureSuccessStatusCode();
+        var refused = await requester.DeleteAsync($"/api/requester/storage/profiles/{used.Id}");
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Contains("stockage de", (await refused.Content.ReadFromJsonAsync<ApiError>())!.Message);
+
+        var dossier = await (await requester.PostAsJsonAsync("/api/requester/dossiers", new CreateDossierRequest(
+            "Stock", null, null, [new TemplateItemDto(null, "Pièce", null, true, [], 5, 1, null, 0)],
+            "stock@example.test", null, DeliveryMode.AllAtOnce, false, null, null))).Content.ReadFromJsonAsync<DossierDto>();
+        var provider = await _f.EnrollEmailAsync(await _f.AcceptInvitationAsync("stock@example.test", "Provider-Passw0rd!"), "stock@example.test");
+        (await provider.PostAsync($"/api/provider/dossiers/{dossier!.Id}/items/{dossier.Items[0].Id}/documents", File(Pdf("stock"), "p.pdf"))).EnsureSuccessStatusCode();
+
+        // Même après avoir rendu le stockage de la plateforme au demandeur, le document bloque la suppression.
+        (await requester.PutAsJsonAsync("/api/requester/tenant/settings", new UpdateTenantSettingsRequest(null, true, false, null, []))).EnsureSuccessStatusCode();
+        var withDoc = (await requester.GetFromJsonAsync<List<StorageProfileDto>>("/api/requester/storage/profiles"))!.Single(p => p.Id == used.Id);
+        Assert.Equal(1, withDoc.DocumentCount);
+        Assert.Contains("1 document", withDoc.DeleteBlockedReason);
+        Assert.Equal(HttpStatusCode.BadRequest, (await requester.DeleteAsync($"/api/requester/storage/profiles/{used.Id}")).StatusCode);
+
+        // 3. Cible d'un canal « copie vers mon stockage » : refusé.
+        var target = await CreateAsync("copie");
+        (await requester.PostAsJsonAsync("/api/requester/channels", new SaveDeliveryChannelRequest(
+            DeliveryChannelType.StorageCopy, "Copie NAS", new() { ["StorageProfileId"] = target.Id.ToString() }, true))).EnsureSuccessStatusCode();
+        var byChannel = await requester.DeleteAsync($"/api/requester/storage/profiles/{target.Id}");
+        Assert.Equal(HttpStatusCode.BadRequest, byChannel.StatusCode);
+        Assert.Contains("Copie NAS", (await byChannel.Content.ReadFromJsonAsync<ApiError>())!.Message);
+
+        try { Directory.Delete(root, true); } catch { }
+    }
+
+    [Fact]
+    public async Task Platform_default_storage_cannot_be_deleted_but_others_can()
+    {
+        var admin = await AdminAsync();
+        var root = Path.Combine(Path.GetTempPath(), "dc-plat-" + Guid.NewGuid().ToString("N"));
+        var def = await (await admin.PostAsJsonAsync("/api/admin/storage/profiles",
+            new SaveStorageProfileRequest("Défaut", "local", new() { ["RootPath"] = Path.Combine(root, "a") }, true))).Content.ReadFromJsonAsync<StorageProfileDto>();
+        var other = await (await admin.PostAsJsonAsync("/api/admin/storage/profiles",
+            new SaveStorageProfileRequest("Autre", "local", new() { ["RootPath"] = Path.Combine(root, "b") }, false))).Content.ReadFromJsonAsync<StorageProfileDto>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.DeleteAsync($"/api/admin/storage/profiles/{def!.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await admin.DeleteAsync($"/api/admin/storage/profiles/{other!.Id}")).StatusCode);
+        // Remise en état : un autre profil devient le défaut, l'ancien peut alors être supprimé s'il est vide.
+        var replacement = await (await admin.PostAsJsonAsync("/api/admin/storage/profiles",
+            new SaveStorageProfileRequest("Nouveau défaut", "local", new() { ["RootPath"] = Path.Combine(root, "c") }, true))).Content.ReadFromJsonAsync<StorageProfileDto>();
+        var listed = await admin.GetFromJsonAsync<List<StorageProfileDto>>("/api/admin/storage/profiles");
+        Assert.False(listed!.Single(p => p.Id == def.Id).IsDefault);
+        var deleteOld = await admin.DeleteAsync($"/api/admin/storage/profiles/{def.Id}");
+        // Les documents des autres tests peuvent être sur le stockage de secours, pas sur ce profil : il est vide.
+        Assert.Equal(HttpStatusCode.NoContent, deleteOld.StatusCode);
+        Assert.NotNull(replacement);
+        try { Directory.Delete(root, true); } catch { }
+    }
 }

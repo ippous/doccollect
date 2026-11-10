@@ -14,7 +14,7 @@ L'activation de l'**option IA** (payante) se fait par demandeur, depuis la liste
 
 **Stockages** : ajoutez au moins un profil et marquez-le **par défaut** — il reçoit les documents des demandeurs qui n'ont pas leur propre stockage. Recommandé : SFTP vers le NAS via Tailscale (voir docs/dev/storage-providers.md). Utilisez **Tester la connexion** après chaque modification.
 
-Ne supprimez jamais un stockage qui contient des documents.
+Un stockage ne peut être **supprimé que s'il est vide et inutilisé** : aucun document, aucun demandeur qui l'utilise, aucun canal « copie vers mon stockage » qui le cible, et pas le stockage par défaut (désignez-en un autre d'abord). Sinon, le bouton Supprimer est grisé et le motif est affiché.
 
 ## Modèles publics
 

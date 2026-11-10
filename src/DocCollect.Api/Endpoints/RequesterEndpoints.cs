@@ -48,7 +48,7 @@ public static class RequesterEndpoints
         {
             var tenantId = http.User.TenantId();
             var own = await db.StorageProfiles.Where(p => p.TenantId == tenantId).OrderBy(p => p.Name).ToListAsync();
-            return own.Select(svc.ToDto);
+            return await svc.ToDtosAsync(own);
         });
 
         g.MapPost("/storage/profiles", async (SaveStorageProfileRequest req, HttpContext http, AppDbContext db, StorageProfileService svc) =>
@@ -78,15 +78,15 @@ public static class RequesterEndpoints
             return await svc.TestAsync(profile, ct);
         });
 
-        g.MapDelete("/storage/profiles/{id:guid}", async (Guid id, HttpContext http, AppDbContext db) =>
+        // Suppression autorisée seulement si le stockage est vide et inutilisé.
+        g.MapDelete("/storage/profiles/{id:guid}", async (Guid id, HttpContext http, AppDbContext db, StorageProfileService svc, CancellationToken ct) =>
         {
             var tenantId = http.User.TenantId();
-            var profile = await db.StorageProfiles.FirstOrDefaultAsync(p => p.Id == id && p.TenantId == tenantId)
+            var profile = await db.StorageProfiles.FirstOrDefaultAsync(p => p.Id == id && p.TenantId == tenantId, ct)
                           ?? throw new NotFoundException("Profil introuvable.");
-            if (await db.Documents.AnyAsync(d => d.StorageProfileId == id))
-                throw new DomainException(ErrorCodes.InvalidState, "Des documents sont stockés sur ce profil : il ne peut pas être supprimé.");
-            db.StorageProfiles.Remove(profile);
-            await db.SaveChangesAsync();
+            await svc.DeleteAsync(profile, ct);
+            db.AuditEvents.Add(new AuditEvent { TenantId = tenantId, UserId = http.User.UserId(), Action = "storage.deleted", Details = profile.Name });
+            await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
 
