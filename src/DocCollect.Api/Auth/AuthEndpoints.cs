@@ -51,7 +51,9 @@ public static class AuthEndpoints
     internal static async Task<IResult> LoginAsync(
         LoginRequest req, UserManager<AppUser> users, SignInManager<AppUser> signIn, TokenIssuer tokens, IEmailSender email)
     {
-        var user = await users.FindByEmailAsync(req.Email.Trim());
+        // Connexion par adresse e-mail ou par identifiant (ex. « ippous-requesteur-dev »).
+        var login = req.Email.Trim();
+        var user = await users.FindByEmailAsync(login) ?? await users.FindByNameAsync(login);
         if (user is null) return Fail("Identifiants invalides.");
 
         var check = await signIn.CheckPasswordSignInAsync(user, req.Password, lockoutOnFailure: true);

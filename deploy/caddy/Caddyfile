@@ -1,5 +1,5 @@
 {
-	email ippous@gmail.com
+	email {$ACME_EMAIL}
 }
 
 (doccollect) {

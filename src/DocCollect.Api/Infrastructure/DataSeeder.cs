@@ -16,6 +16,23 @@ public sealed class SeedOptions
     public string? DemoRequesterEmail { get; set; }
     public string? DemoRequesterPassword { get; set; }
     public bool PublicTemplates { get; set; } = true;
+    /// <summary>Comptes nommés créés au démarrage s'ils n'existent pas (ex. ippous-admin-dev, ippous-requesteur-dev, ippous-customer-dev).</summary>
+    public List<SeedUser> Users { get; set; } = [];
+}
+
+/// <summary>
+/// Compte créé au démarrage. Role : Admin, Requester (demandeur, rattaché au demandeur TenantSlug, créé si besoin)
+/// ou Provider (client qui dépose des documents). La 2FA est demandée à la première connexion.
+/// </summary>
+public sealed class SeedUser
+{
+    public string UserName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string? Password { get; set; }
+    public string Role { get; set; } = Roles.Provider;
+    public string? DisplayName { get; set; }
+    public string? TenantSlug { get; set; }
+    public string? TenantName { get; set; }
 }
 
 public static class DataSeeder
@@ -51,6 +68,27 @@ public static class DataSeeder
             await CreateUserAsync(users, seed.DemoRequesterEmail, seed.DemoRequesterPassword, Roles.Requester, tenant.Id, logger);
         }
 
+        foreach (var u in seed.Users.Where(u => !string.IsNullOrWhiteSpace(u.UserName) && !string.IsNullOrWhiteSpace(u.Email)
+                                                 && !string.IsNullOrWhiteSpace(u.Password)))
+        {
+            if (await users.FindByNameAsync(u.UserName) is not null) continue;
+            if (!Roles.All.Contains(u.Role))
+            {
+                logger.LogError("Compte {User} : rôle inconnu {Role}.", u.UserName, u.Role);
+                continue;
+            }
+            Guid? tenantId = null;
+            if (u.Role == Roles.Requester)
+            {
+                var slug = (u.TenantSlug ?? "ippous").Trim().ToLowerInvariant();
+                var tenant = await db.Tenants.FirstOrDefaultAsync(t => t.Slug == slug)
+                             ?? db.Tenants.Add(new Tenant { Name = u.TenantName ?? slug, Slug = slug }).Entity;
+                await db.SaveChangesAsync();
+                tenantId = tenant.Id;
+            }
+            await CreateUserAsync(users, u.Email, u.Password!, u.Role, tenantId, logger, u.UserName, u.DisplayName);
+        }
+
         if (seed.PublicTemplates && !await db.Templates.AnyAsync(t => t.Visibility == TemplateVisibility.Public))
         {
             db.Templates.AddRange(PublicTemplates());
@@ -58,9 +96,10 @@ public static class DataSeeder
         }
     }
 
-    private static async Task CreateUserAsync(UserManager<AppUser> users, string email, string password, string role, Guid? tenantId, ILogger logger)
+    private static async Task CreateUserAsync(UserManager<AppUser> users, string email, string password, string role, Guid? tenantId, ILogger logger,
+        string? userName = null, string? displayName = null)
     {
-        var user = new AppUser { UserName = email, Email = email, EmailConfirmed = true, TenantId = tenantId };
+        var user = new AppUser { UserName = userName ?? email, Email = email, EmailConfirmed = true, TenantId = tenantId, DisplayName = displayName };
         var result = await users.CreateAsync(user, password);
         if (!result.Succeeded)
         {

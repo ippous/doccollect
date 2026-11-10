@@ -12,6 +12,8 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?adresse pour Let's Encrypt}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

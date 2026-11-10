@@ -30,6 +30,21 @@ services:
       - Smtp__SubjectPrefix=${SMTP_SUBJECT_PREFIX:-}
       - Seed__AdminEmail=${DC_ADMIN_EMAIL:-}
       - Seed__AdminPassword=${DC_ADMIN_PASSWORD:-}
+      # Comptes nommés (admin, demandeur, client) : voir .env.example
+      - Seed__Users__0__UserName=${DC_USER_ADMIN:-}
+      - Seed__Users__0__Email=${DC_USER_ADMIN_EMAIL:-}
+      - Seed__Users__0__Password=${DC_USER_ADMIN_PASSWORD:-}
+      - Seed__Users__0__Role=Admin
+      - Seed__Users__1__UserName=${DC_USER_REQUESTER:-}
+      - Seed__Users__1__Email=${DC_USER_REQUESTER_EMAIL:-}
+      - Seed__Users__1__Password=${DC_USER_REQUESTER_PASSWORD:-}
+      - Seed__Users__1__Role=Requester
+      - Seed__Users__1__TenantSlug=${DC_USER_REQUESTER_TENANT:-ippous}
+      - Seed__Users__1__TenantName=${DC_USER_REQUESTER_TENANT_NAME:-Ippous}
+      - Seed__Users__2__UserName=${DC_USER_CUSTOMER:-}
+      - Seed__Users__2__Email=${DC_USER_CUSTOMER_EMAIL:-}
+      - Seed__Users__2__Password=${DC_USER_CUSTOMER_PASSWORD:-}
+      - Seed__Users__2__Role=Provider
       - Ai__Providers__mistral-eu__Enabled=${AI_MISTRAL_ENABLED:-false}
       - Ai__Providers__mistral-eu__ApiKey=${AI_MISTRAL_KEY:-}
       - Ai__Providers__anthropic__Enabled=${AI_ANTHROPIC_ENABLED:-false}
